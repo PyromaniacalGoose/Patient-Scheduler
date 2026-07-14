@@ -4,7 +4,7 @@ patiant info isn't needed in scheduling logic, so we don't expose it domain side
 OBS it is important to keep this along with the repositories translating between it and the django ORM in-sync
 """
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, time, date
 from enum import IntEnum
 
 class AppointmentStatus(IntEnum):
@@ -24,6 +24,13 @@ class TreatmentType(IntEnum):
     V2 = 2
 
 @dataclass(frozen=True)
+class DaySchedule:
+    weekday: int  #0=Monday ... 6=Sunday
+    open_time: time
+    close_time: time
+    slot_duration_minutes: int
+
+@dataclass(frozen=True)
 class Appointment:
     id: int | None
     course_id: int
@@ -34,7 +41,7 @@ class Appointment:
     note: str
     
     def __post_init__(self):
-        if self.treatment_number <= 1:
+        if self.treatment_number <= 0:
             raise ValueError("treatment_number must be above 0")
 
 @dataclass(frozen=True)
@@ -47,6 +54,12 @@ class TreatmentSlot:
     def __post_init__(self):
         if self.end_time <= self.start_time:
             raise ValueError("end_time must be after start_time")
+        
+@dataclass(frozen=True) #evaluted empty slots, exists only domain side, not persisted
+class AvailableWindow:
+    space_id: int
+    start_time: datetime
+    end_time: datetime
 
 @dataclass(frozen=True)
 class TreatmentCourse:
@@ -56,5 +69,15 @@ class TreatmentCourse:
     status: CourseStatus
         
     def __post_init__(self):
-        if self.planned_treatments <= 0:
+        if self.planned_treatments < 0:
             raise ValueError("planned_treatments cannot be negative")
+
+@dataclass(frozen=True)
+class ScheduleClosure:
+    space_id: int | None
+    date: date
+
+@dataclass(frozen=True)
+class SpaceSchedule:
+    space_id: int
+    days: list[DaySchedule]

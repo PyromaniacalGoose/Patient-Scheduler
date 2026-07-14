@@ -48,11 +48,18 @@ class Patient(models.Model):
     #Soft delete
     is_active = models.BooleanField(default=True)
   
-
 class TreatmentSlot(models.Model):
     space = models.ForeignKey(TreatmentSpace, on_delete=models.CASCADE)
     start_time = models.DateTimeField(db_index=True)
     end_time = models.DateTimeField()
+
+#For representing holidays or other workdays with no open slots, can also model closure of individual treatment spaces
+class ScheduleClosure(models.Model):
+    space = models.ForeignKey(
+        TreatmentSpace, null=True, blank=True, on_delete=models.CASCADE
+    )  #null = hospital-wide closure (e.g. a public holiday)
+    date = models.DateField()
+    reason = models.CharField(max_length=200, blank=True)
 
 class TreatmentCourse(models.Model):
     patient = models.ForeignKey(Patient, on_delete=models.PROTECT)
