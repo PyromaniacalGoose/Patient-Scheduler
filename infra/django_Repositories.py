@@ -4,7 +4,8 @@ from django.db import transaction
 
 from .models import TreatmentAppointment as ORMAppointment
 from .models import TreatmentSlot as ORMSlot
-from scheduling.models import Appointment, AppointmentStatus, TreatmentSlot, TreatmentType 
+from .models import TreatmentCourse as ORMCourse
+from scheduling.models import Appointment, AppointmentStatus, CourseStatus, TreatmentCourse, TreatmentSlot, TreatmentType
 
 class DjangoAppointmentRepository:
     def get_by_id(self, appointment_id: int) -> Appointment | None:
@@ -111,4 +112,49 @@ class DjangoSlotRepository:
             space_id=orm_obj.space_id,
             start_time=orm_obj.start_time,
             end_time=orm_obj.end_time,
+        )
+
+class DjangoCourseRepository:
+    def get_by_id(self, course_id: int) -> TreatmentCourse | None: 
+        try:
+            orm_obj = ORMCourse.objects.get(id=course_id, is_active=True)
+        except ORMCourse.DoesNotExist:
+            return None
+        return self._to_domain(orm_obj)
+
+    #TODO Make sure this either can't return multiple values, or handle a scenario where it does.
+    def get_active_course_by_patient_id(self, patient_id: int) -> TreatmentCourse | None: 
+        try:
+            orm_obj = ORMCourse.objects.get(patient_id=patient_id, status=CourseStatus.ACTIVE.value, is_active=True)
+        except ORMCourse.DoesNotExist:
+            return None
+        return self._to_domain(orm_obj)
+
+    def cancel(self, course_id: int) -> None: 
+        ORMCourse.objects.filter(id=course_id).update(
+                is_active=False, status=CourseStatus.CANCELLED.value
+            ) #Same as with appoinments
+        
+    def save(self, course: TreatmentCourse) -> TreatmentCourse:
+        if course.id is None:
+            orm_obj = ORMCourse.objects.create(
+                patient_id = course.patient_id,
+                planned_treatments = course.planned_treatments,
+                status = course.status.value,
+            )
+        else:
+            orm_obj = ORMCourse.objects.get(id=course.id)
+            orm_obj.patient_id = course.patient_id
+            orm_obj.planned_treatments = course.planned_treatments
+            orm_obj.status = course.status.value
+            orm_obj.save()
+        return self._to_domain(orm_obj)
+
+    @staticmethod
+    def _to_domain(orm_obj: ORMCourse) -> TreatmentCourse:
+        return TreatmentCourse(
+            id=orm_obj.id,
+            patient_id=orm_obj.patient_id,
+            planned_treatments=orm_obj.planned_treatments,
+            status=CourseStatus(orm_obj.status),
         )
