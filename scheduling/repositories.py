@@ -1,5 +1,5 @@
 from typing import Protocol
-from datetime import datetime
+from datetime import date, datetime
 from .models import Appointment, ScheduleClosure, SpaceSchedule, TreatmentCourse, TreatmentSlot
 
 class AppointmentRepository(Protocol):
@@ -22,4 +22,5 @@ class SlotRepository(Protocol):
 
 class ScheduleRepository(Protocol):
     def get_rules_for_space(self, space_id: int) -> list[SpaceSchedule]: ...
-    def get_closures(self, start: datetime, end: datetime) -> list[ScheduleClosure]: ...
+    def get_closures(self, start: date, end: date) -> list[ScheduleClosure]: ...
+

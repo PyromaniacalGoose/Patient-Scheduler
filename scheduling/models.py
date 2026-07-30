@@ -24,11 +24,18 @@ class TreatmentType(IntEnum):
     V2 = 2
 
 @dataclass(frozen=True)
-class DaySchedule:
+class SpaceSchedule:
+    space_id: int
     weekday: int  #0=Monday ... 6=Sunday
     open_time: time
     close_time: time
     slot_duration_minutes: int
+
+@dataclass(frozen=True)
+class ScheduleClosure:
+    space_id: int | None
+    date: date
+    reason: str
 
 @dataclass(frozen=True)
 class Appointment:
@@ -72,12 +79,4 @@ class TreatmentCourse:
         if self.planned_treatments < 0:
             raise ValueError("planned_treatments cannot be negative")
 
-@dataclass(frozen=True)
-class ScheduleClosure:
-    space_id: int | None
-    date: date
 
-@dataclass(frozen=True)
-class SpaceSchedule:
-    space_id: int
-    days: list[DaySchedule]

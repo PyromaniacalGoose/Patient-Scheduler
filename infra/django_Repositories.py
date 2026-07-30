@@ -1,11 +1,13 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from django.db import transaction
 
 from .models import TreatmentAppointment as ORMAppointment
 from .models import TreatmentSlot as ORMSlot
 from .models import TreatmentCourse as ORMCourse
-from scheduling.models import Appointment, AppointmentStatus, CourseStatus, TreatmentCourse, TreatmentSlot, TreatmentType
+from .models import SpaceSchedule as ORMSpaceSchedule, ScheduleClosure as ORMScheduleClosure
+
+from scheduling.models import Appointment, AppointmentStatus, CourseStatus, TreatmentCourse, TreatmentSlot, TreatmentType, SpaceSchedule, ScheduleClosure
 
 class DjangoAppointmentRepository:
     def get_by_id(self, appointment_id: int) -> Appointment | None:
@@ -157,4 +159,33 @@ class DjangoCourseRepository:
             patient_id=orm_obj.patient_id,
             planned_treatments=orm_obj.planned_treatments,
             status=CourseStatus(orm_obj.status),
+        )
+
+class DjangoScheduleRepository:
+    def get_rules_for_space(self, space_id: int) -> list[SpaceSchedule]:
+        orm_rules = ORMSpaceSchedule.objects.filter(space_id=space_id).order_by("weekday")
+        return [self._rule_to_domain(r) for r in orm_rules]
+
+    def get_closures(self, start: date, end: date) -> list[ScheduleClosure]:
+        orm_closures = ORMScheduleClosure.objects.filter(
+            date__gte=start, date__lte=end
+        ).order_by("date")
+        return [self._closure_to_domain(c) for c in orm_closures]
+
+    @staticmethod
+    def _rule_to_domain(orm_obj: ORMSpaceSchedule) -> SpaceSchedule:
+        return SpaceSchedule(
+            space_id=orm_obj.space_id,
+            weekday=orm_obj.weekday,
+            open_time=orm_obj.open_time,
+            close_time=orm_obj.close_time,
+            slot_duration_minutes=orm_obj.slot_duration_minutes,
+        )
+
+    @staticmethod
+    def _closure_to_domain(orm_obj: ORMScheduleClosure) -> ScheduleClosure:
+        return ScheduleClosure(
+            space_id=orm_obj.space_id,
+            date=orm_obj.date,
+            reason=orm_obj.reason,
         )
