@@ -38,6 +38,11 @@ class ScheduleClosure:
     reason: str
 
 @dataclass(frozen=True)
+class TreatmentSpace:
+    id: int | None
+    name: str
+
+@dataclass(frozen=True)
 class Appointment:
     id: int | None
     course_id: int

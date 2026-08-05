@@ -5,9 +5,10 @@ from django.db import transaction
 from .models import TreatmentAppointment as ORMAppointment
 from .models import TreatmentSlot as ORMSlot
 from .models import TreatmentCourse as ORMCourse
+from .models import TreatmentSpace as ORMSpace
 from .models import SpaceSchedule as ORMSpaceSchedule, ScheduleClosure as ORMScheduleClosure
 
-from scheduling.models import Appointment, AppointmentStatus, CourseStatus, TreatmentCourse, TreatmentSlot, TreatmentType, SpaceSchedule, ScheduleClosure
+from scheduling.models import Appointment, AppointmentStatus, CourseStatus, TreatmentCourse, TreatmentSlot, TreatmentSpace, TreatmentType, SpaceSchedule, ScheduleClosure
 
 class DjangoAppointmentRepository:
     def get_by_id(self, appointment_id: int) -> Appointment | None:
@@ -188,4 +189,23 @@ class DjangoScheduleRepository:
             space_id=orm_obj.space_id,
             date=orm_obj.date,
             reason=orm_obj.reason,
+        )
+
+class SpaceRepository: 
+    def get_all(self) -> list[TreatmentSpace]:
+        orm_spaces = ORMSpace.objects.all()
+        return [self._to_domain(a) for a in orm_spaces]
+
+    def get_by_id(self, space_id: int) -> TreatmentSpace | None:
+        try:
+            orm_obj = ORMSpace.objects.get(id=space_id, is_active=True)
+        except ORMSpace.DoesNotExist:
+            return None
+        return self._to_domain(orm_obj)
+    
+    @staticmethod
+    def _to_domain(orm_obj: ORMSpace) -> TreatmentSpace:
+        return TreatmentSpace(
+            id=orm_obj.id,
+            name=orm_obj.name,
         )
