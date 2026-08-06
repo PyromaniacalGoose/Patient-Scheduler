@@ -6,9 +6,9 @@ from .models import TreatmentAppointment as ORMAppointment
 from .models import TreatmentSlot as ORMSlot
 from .models import TreatmentCourse as ORMCourse
 from .models import TreatmentSpace as ORMSpace
-from .models import SpaceSchedule as ORMSpaceSchedule, ScheduleClosure as ORMScheduleClosure
+from .models import SpaceSchedule as ORMSpaceSchedule, ScheduleClosure as ORMScheduleClosure, ScheduleOverride as ORMScheduleOverride
 
-from scheduling.models import Appointment, AppointmentStatus, CourseStatus, TreatmentCourse, TreatmentSlot, TreatmentSpace, TreatmentType, SpaceSchedule, ScheduleClosure
+from scheduling.models import Appointment, AppointmentStatus, CourseStatus, ScheduleOverride, TreatmentCourse, TreatmentSlot, TreatmentSpace, TreatmentType, SpaceSchedule, ScheduleClosure
 
 class DjangoAppointmentRepository:
     def get_by_id(self, appointment_id: int) -> Appointment | None:
@@ -173,6 +173,12 @@ class DjangoScheduleRepository:
         ).order_by("date")
         return [self._closure_to_domain(c) for c in orm_closures]
 
+    def get_schedule_overrides(self, start: date, end: date) -> list[ScheduleOverride]:
+        orm_overrides = ORMScheduleOverride.objects.filter(
+            date__gte=start, date__lte=end
+        ).order_by("date")
+        return [self._overrides_to_domain(c) for c in orm_overrides]
+        
     @staticmethod
     def _rule_to_domain(orm_obj: ORMSpaceSchedule) -> SpaceSchedule:
         return SpaceSchedule(
@@ -180,7 +186,6 @@ class DjangoScheduleRepository:
             weekday=orm_obj.weekday,
             open_time=orm_obj.open_time,
             close_time=orm_obj.close_time,
-            slot_duration_minutes=orm_obj.slot_duration_minutes,
         )
 
     @staticmethod
@@ -189,6 +194,15 @@ class DjangoScheduleRepository:
             space_id=orm_obj.space_id,
             date=orm_obj.date,
             reason=orm_obj.reason,
+        )
+
+    @staticmethod
+    def _override_to_domain(orm_obj: ORMScheduleOverride) -> ScheduleOverride:
+        return ScheduleOverride(
+            space_id=orm_obj.space_id,
+            date=orm_obj.date,
+            open_time=orm_obj.open_time,
+            close_time=orm_obj.close_time,
         )
 
 class SpaceRepository: 

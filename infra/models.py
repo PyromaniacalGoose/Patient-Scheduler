@@ -89,7 +89,6 @@ class SpaceSchedule(models.Model):
     weekday = models.IntegerField(choices=[(0,"Man"),(1,"Tir"),(2,"Ons"),(3,"Tor"),(4,"Fre"),(5,"Lør"),(6,"Søn")])
     open_time = models.TimeField()
     close_time = models.TimeField()
-    slot_duration_minutes = models.PositiveSmallIntegerField(default=30)
 
     class Meta:
         unique_together = ("space", "weekday")
@@ -99,4 +98,9 @@ class ScheduleClosure(models.Model):
     date = models.DateField()
     reason = models.CharField(max_length=200, blank=True)
 
+class ScheduleOverride(models.Model):
+    space = models.ForeignKey(TreatmentSpace, null=True, blank=True, on_delete=models.CASCADE)
+    date = models.DateField()
+    open_time = models.TimeField()
+    close_time = models.TimeField()
 

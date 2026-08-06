@@ -29,13 +29,19 @@ class SpaceSchedule:
     weekday: int  #0=Monday ... 6=Sunday
     open_time: time
     close_time: time
-    slot_duration_minutes: int
 
 @dataclass(frozen=True)
 class ScheduleClosure:
     space_id: int | None
     date: date
     reason: str
+
+@dataclass(frozen=True)
+class ScheduleOverride:
+    space_id: int | None
+    date: date
+    open_time: time
+    close_time: time
 
 @dataclass(frozen=True)
 class TreatmentSpace:
