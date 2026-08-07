@@ -73,8 +73,14 @@ class TreatmentSlot:
         if self.end_time <= self.start_time:
             raise ValueError("end_time must be after start_time")
         
-@dataclass(frozen=True) #evaluted empty slots, exists only domain side, not persisted
+@dataclass(frozen=True) # Evaluted time that adhere to a treatment lenght, exists only domain side, not persisted
 class AvailableWindow:
+    space_id: int
+    start_time: datetime
+    end_time: datetime
+
+@dataclass(frozen=True)  # Evaluted arbitrary lenght of time existing within open hours, exists only domain side, not persisted
+class FreeInterval:
     space_id: int
     start_time: datetime
     end_time: datetime
