@@ -53,6 +53,14 @@ class TreatmentSlot(models.Model):
     start_time = models.DateTimeField(db_index=True)
     end_time = models.DateTimeField()
 
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields = ["space", "start_time"],
+                name = "unique_space_start_time",
+            )
+        ]
+
 #For representing holidays or other workdays with no open slots, can also model closure of individual treatment spaces
 class ScheduleClosure(models.Model):
     space = models.ForeignKey(

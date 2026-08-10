@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from .models import TreatmentAppointment as ORMAppointment
 from .models import TreatmentSlot as ORMSlot
@@ -8,7 +8,7 @@ from .models import TreatmentCourse as ORMCourse
 from .models import TreatmentSpace as ORMSpace
 from .models import SpaceSchedule as ORMSpaceSchedule, ScheduleClosure as ORMScheduleClosure, ScheduleOverride as ORMScheduleOverride
 
-from scheduling.models import Appointment, AppointmentStatus, CourseStatus, ScheduleOverride, TreatmentCourse, TreatmentSlot, TreatmentSpace, TreatmentType, SpaceSchedule, ScheduleClosure
+from scheduling.models import Appointment, AppointmentStatus, CourseStatus, ScheduleOverride, SlotUnavailableError, TreatmentCourse, TreatmentSlot, TreatmentSpace, TreatmentType, SpaceSchedule, ScheduleClosure
 
 class DjangoAppointmentRepository:
     def get_by_id(self, appointment_id: int) -> Appointment | None:
@@ -82,18 +82,22 @@ class DjangoSlotRepository:
         return [self._to_domain(s) for s in orm_slots]
     
     def save(self, treatment_slot: TreatmentSlot) -> TreatmentSlot:
-        if treatment_slot.id is None:
-            orm_obj = ORMSlot.objects.create(
-                space_id = treatment_slot.space_id,
-                start_time = treatment_slot.start_time,
-                end_time = treatment_slot.end_time,
-            )
-        else:
-            orm_obj = ORMSlot.objects.get(id=treatment_slot.id)
-            orm_obj.space_id = treatment_slot.space_id
-            orm_obj.start_time = treatment_slot.start_time
-            orm_obj.end_time = treatment_slot.end_time
-            orm_obj.save()
+        try:
+            if treatment_slot.id is None:
+                orm_obj = ORMSlot.objects.create(
+                    space_id=treatment_slot.space_id,
+                    start_time=treatment_slot.start_time,
+                    end_time=treatment_slot.end_time,
+                )
+            else:
+                orm_obj = ORMSlot.objects.get(id=treatment_slot.id)
+                orm_obj.space_id = treatment_slot.space_id
+                orm_obj.start_time = treatment_slot.start_time
+                orm_obj.end_time = treatment_slot.end_time
+                orm_obj.save()
+        except IntegrityError:
+            raise SlotUnavailableError(treatment_slot.space_id, treatment_slot.start_time) from None
+
         return self._to_domain(orm_obj)
 
     def unbook(self, slot_id: int) -> Appointment | None:

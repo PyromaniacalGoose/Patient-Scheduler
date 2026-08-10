@@ -96,4 +96,10 @@ class TreatmentCourse:
         if self.planned_treatments < 0:
             raise ValueError("planned_treatments cannot be negative")
 
+class SlotUnavailableError(Exception):
+    # Raised when attempting to book a space-time window that's already taken.
+    def __init__(self, space_id: int, start_time: datetime):
+        self.space_id = space_id
+        self.start_time = start_time
+        super().__init__(f"Slot at space {space_id}, {start_time} is no longer available")
 
