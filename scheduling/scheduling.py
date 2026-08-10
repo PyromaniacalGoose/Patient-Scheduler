@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 from .repositories import AppointmentRepository, CourseRepository, SlotRepository, ScheduleRepository, SpaceRepository
 from.models import FreeInterval, ScheduleClosure, ScheduleOverride, SpaceSchedule, TreatmentSlot, TreatmentType, AvailableWindow, TreatmentSpace
@@ -9,8 +9,8 @@ from django.db.transaction import atomic
 
 # Hardcoded, but I doubt it'll be an issue
 TREATMENT_DURATIONS: dict[TreatmentType, int] = {
-    TreatmentType.V1: 60, #Not the real times
-    TreatmentType.V2: 90,
+    TreatmentType.V1: 270, #minutes
+    TreatmentType.V2: 510,
 }
 
 class SchedulingService:
@@ -20,11 +20,83 @@ class SchedulingService:
             slot_repo: SlotRepository,
             course_repo: CourseRepository,
             schedule_repo: ScheduleRepository,
+            space_repo: SpaceRepository,
     ):
         self._appointment_repo = appointment_repo
         self._slot_repo = slot_repo
         self._course_repo = course_repo
         self._schedule_repo = schedule_repo
+        self._space_repo = space_repo
+
+    '''Method to find the earliest available window from a given date, expands search in increments of 3 weeks with a max of 180 days'''
+    def find_earliest_available_on_or_after(
+            self,
+            earliest: date, 
+            duration_minutes: int,
+            space_ids: list[int],
+            initial_window_days: int = 21,
+            max_search_days: int = 180,
+            ) -> AvailableWindow | None: 
+        window_days = initial_window_days
+        search_start_date = earliest
+
+        while window_days <= max_search_days: # To avoid extreme intervals
+            search_end_date = search_start_date + timedelta(days=window_days)
+            search_start = datetime.combine(search_start_date, time.min)
+            search_end = datetime.combine(search_end_date, time.min)
+
+            # Repo calls
+            rules = []
+            for sp_id in space_ids:
+                rules.extend(self._schedule_repo.get_rules_for_space(sp_id))
+            overrides = self._schedule_repo.get_schedule_overrides(search_start_date, search_end_date)
+            closures = self._schedule_repo.get_closures(search_start_date, search_end_date)
+            booked = []
+            for sp_id in space_ids:
+                booked.extend(self._slot_repo.get_booked_in_range(sp_id, search_start, search_end))
+
+            free = compute_free_intervals(rules, overrides, closures, booked, search_start, search_end, space_ids)
+            windows = find_windows_for_duration(free, duration_minutes)
+
+            if windows: # Already sorted earliest first
+                return windows[0]
+
+            window_days += 21 # expand search by 3 weeks
+
+        return None
+            
+    def plan_course_dates(
+        self,
+        earliest_start: date,
+        appointment_count: int,
+        min_interval_days: int, # 56 (8 weeks) hard floor
+        soft_preferred_days: int, # 77 (11 weeks) informational, not a ceiling
+        duration_minutes: int,
+    ) -> tuple[list[AvailableWindow], list[bool]] | None: 
+        windows: list[date] = []
+        flagged: list[bool] = [] # Flag to indicate if we've gone above soft cealing 
+        next_earliest = earliest_start 
+        space_ids = self._space_repo.get_all()
+        
+
+        for _ in range(appointment_count): 
+            found = self.find_earliest_available_on_or_after(
+                next_earliest, duration_minutes, space_ids
+            )
+            if found is None:
+                return None
+
+            found_date = found.start_time.date()
+            soft_limit = next_earliest + timedelta(days=(soft_preferred_days - min_interval_days))
+            flagged.append(found_date > soft_limit)
+
+            windows.append(found)
+            next_earliest = found_date + timedelta(days=min_interval_days)
+
+        return windows, flagged
+            
+
+
 
 '''Function to find all unbooked free time per day, per room. this doesn't check if that time is actually useable, 
 (ex: could return 10 minutes for a room on thursday if that is within open hours and unbooked), but can be fed to find_windows_for_duration
