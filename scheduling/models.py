@@ -4,7 +4,7 @@ patiant info isn't needed in scheduling logic, so we don't expose it domain side
 OBS it is important to keep this along with the repositories translating between it and the django ORM in-sync
 """
 from dataclasses import dataclass, replace
-from datetime import datetime, time, date
+from datetime import datetime, time, date, timedelta
 from enum import IntEnum
 
 class AppointmentStatus(IntEnum):
@@ -22,6 +22,12 @@ class CourseStatus(IntEnum):
 class TreatmentType(IntEnum):
     V1 = 1
     V2 = 2
+
+    
+TREATMENT_DURATIONS: dict[TreatmentType, int] = {
+    TreatmentType.V1: 270,   # 4.5 hours, in minutes
+    TreatmentType.V2: 510,   # 8.5 hours, in minutes
+}
 
 @dataclass(frozen=True)
 class SpaceSchedule:
@@ -72,6 +78,17 @@ class TreatmentSlot:
     def __post_init__(self):
         if self.end_time <= self.start_time:
             raise ValueError("end_time must be after start_time")
+
+@dataclass(frozen=True)
+class TreatmentCourse:
+    id: int | None
+    patient_id: int
+    planned_treatments: int
+    status: CourseStatus
+        
+    def __post_init__(self):
+        if self.planned_treatments < 0:
+            raise ValueError("planned_treatments cannot be negative")
         
 @dataclass(frozen=True) # Evaluted time that adhere to a treatment lenght, exists only domain side, not persisted
 class AvailableWindow:
@@ -85,16 +102,20 @@ class FreeInterval:
     start_time: datetime
     end_time: datetime
 
-@dataclass(frozen=True)
-class TreatmentCourse:
-    id: int | None
-    patient_id: int
-    planned_treatments: int
-    status: CourseStatus
-        
+@dataclass(frozen=True) # User input
+class PlannedAppointment:
+    window: AvailableWindow
+    note: str = ""
+    treatment_type: TreatmentType
+
     def __post_init__(self):
-        if self.planned_treatments < 0:
-            raise ValueError("planned_treatments cannot be negative")
+        window_duration = self.window.end_time - self.window.start_time
+        required = timedelta(minutes=TREATMENT_DURATIONS[self.treatment_type])
+        if window_duration < required:
+            raise ValueError(
+                f"window duration {window_duration} is too short for "
+                f"{self.treatment_type.name} (needs {required})"
+            )
 
 class SlotUnavailableError(Exception):
     # Raised when attempting to book a space-time window that's already taken.
@@ -103,3 +124,29 @@ class SlotUnavailableError(Exception):
         self.start_time = start_time
         super().__init__(f"Slot at space {space_id}, {start_time} is no longer available")
 
+class AppointmentMissmatchError(Exception):
+    # Raised when wrong amount of appointments are attempted booked
+    def __init__(self, p_appointments: list[PlannedAppointment], appointments: int):
+        self.p_appointments = p_appointments
+        self.appointments = appointments
+
+        p_appointment_str = ", ".join(
+            f"space {p_appointment.window.space_id}: "
+            f"{p_appointment.start_time:%Y-%m-%d %H:%M} - "
+            f"{p_appointment.end_time:%H:%M}"
+            for p_appointment in p_appointments
+        )
+
+        super().__init__(f"Could not book {appointments} of type {p_appointments[0].type} appointments in timeslots: {p_appointment_str}")
+
+
+class CourseBookingFailedError(Exception):
+    # Raised to propogate a bit more info up the chain on a booking failure
+    def __init__(self, failed_at_appointment: int, underlying: SlotUnavailableError):
+        self.failed_at_appointment = failed_at_appointment
+        self.space_id = underlying.space_id
+        self.start_time = underlying.start_time
+        super().__init__(
+            f"Booking failed at appointment {failed_at_appointment}: "
+            f"slot at space {underlying.space_id}, {underlying.start_time} is no longer available"
+        )
