@@ -6,6 +6,10 @@ OBS it is important to keep this along with the repositories translating between
 from dataclasses import dataclass, replace
 from datetime import datetime, time, date, timedelta
 from enum import IntEnum
+from zoneinfo import ZoneInfo
+
+# Global timezone
+COPENHAGEN_TZ = ZoneInfo("Europe/Copenhagen")
 
 class AppointmentStatus(IntEnum):
     SCHEDULED = 1
@@ -23,7 +27,7 @@ class TreatmentType(IntEnum):
     V1 = 1
     V2 = 2
 
-    
+
 TREATMENT_DURATIONS: dict[TreatmentType, int] = {
     TreatmentType.V1: 270,   # 4.5 hours, in minutes
     TreatmentType.V2: 510,   # 8.5 hours, in minutes
@@ -32,7 +36,7 @@ TREATMENT_DURATIONS: dict[TreatmentType, int] = {
 @dataclass(frozen=True)
 class SpaceSchedule:
     space_id: int
-    weekday: int  #0=Monday ... 6=Sunday
+    weekday: int  # 0=Monday ... 6=Sunday
     open_time: time
     close_time: time
 
@@ -63,10 +67,15 @@ class Appointment:
     status: AppointmentStatus
     type: TreatmentType
     note: str
-    
+
     def __post_init__(self):
         if self.treatment_number <= 0:
             raise ValueError("treatment_number must be above 0")
+
+def _require_aware(*values: datetime) -> None:
+    for v in values:
+        if v.tzinfo is None:
+            raise ValueError(f"datetime {v!r} must be timezone-aware")
 
 @dataclass(frozen=True)
 class TreatmentSlot:
@@ -76,6 +85,7 @@ class TreatmentSlot:
     end_time: datetime
 
     def __post_init__(self):
+        _require_aware(self.start_time, self.end_time)
         if self.end_time <= self.start_time:
             raise ValueError("end_time must be after start_time")
 
@@ -85,28 +95,38 @@ class TreatmentCourse:
     patient_id: int
     planned_treatments: int
     status: CourseStatus
-        
+
     def __post_init__(self):
         if self.planned_treatments < 0:
             raise ValueError("planned_treatments cannot be negative")
-        
-@dataclass(frozen=True) # Evaluted time that adhere to a treatment lenght, exists only domain side, not persisted
+
+@dataclass(frozen=True)  # Evaluated time that adheres to a treatment length, exists only domain side, not persisted
 class AvailableWindow:
     space_id: int
     start_time: datetime
     end_time: datetime
 
-@dataclass(frozen=True)  # Evaluted arbitrary lenght of time existing within open hours, exists only domain side, not persisted
+    def __post_init__(self):
+        _require_aware(self.start_time, self.end_time)
+        if self.end_time <= self.start_time:
+            raise ValueError("end_time must be after start_time")
+
+@dataclass(frozen=True)  # Evaluated arbitrary length of time existing within open hours, exists only domain side, not persisted
 class FreeInterval:
     space_id: int
     start_time: datetime
     end_time: datetime
 
-@dataclass(frozen=True) # User input
+    def __post_init__(self):
+        _require_aware(self.start_time, self.end_time)
+        if self.end_time <= self.start_time:
+            raise ValueError("end_time must be after start_time")
+
+@dataclass(frozen=True)  # User input
 class PlannedAppointment:
     window: AvailableWindow
-    note: str = ""
     treatment_type: TreatmentType
+    note: str = ""
 
     def __post_init__(self):
         window_duration = self.window.end_time - self.window.start_time
@@ -131,17 +151,19 @@ class AppointmentMissmatchError(Exception):
         self.appointments = appointments
 
         p_appointment_str = ", ".join(
-            f"space {p_appointment.window.space_id}: "
-            f"{p_appointment.start_time:%Y-%m-%d %H:%M} - "
-            f"{p_appointment.end_time:%H:%M}"
-            for p_appointment in p_appointments
+            f"space {p.window.space_id}: "
+            f"{p.window.start_time:%Y-%m-%d %H:%M} - "
+            f"{p.window.end_time:%H:%M}"
+            for p in p_appointments
         )
 
-        super().__init__(f"Could not book {appointments} of type {p_appointments[0].type} appointments in timeslots: {p_appointment_str}")
-
+        treatment_label = p_appointments[0].treatment_type.name if p_appointments else "unknown"
+        super().__init__(
+            f"Could not book {appointments} of type {treatment_label} appointments in timeslots: {p_appointment_str}"
+        )
 
 class CourseBookingFailedError(Exception):
-    # Raised to propogate a bit more info up the chain on a booking failure
+    # Raised to propagate a bit more info up the chain on a booking failure
     def __init__(self, failed_at_appointment: int, underlying: SlotUnavailableError):
         self.failed_at_appointment = failed_at_appointment
         self.space_id = underlying.space_id
