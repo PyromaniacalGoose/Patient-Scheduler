@@ -35,4 +35,12 @@ def test_two_intervals_returns_one_window():
     assert len(result) == 1
     
 
-#def test_two_intervals_returns_two_window():...
+def test_two_intervals_returns_two_window():
+    result = find_windows_for_duration([interval1, interval2], 60)
+    end_time_result = start_t + timedelta(hours=1)
+
+    assert len(result) == 2
+    assert result[0].start_time == start_t
+    assert result[0].end_time == end_time_result
+    assert result[1].start_time == start_t
+    assert result[1].end_time == end_time_result
