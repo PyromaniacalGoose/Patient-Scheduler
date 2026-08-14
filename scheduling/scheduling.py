@@ -79,12 +79,21 @@ class SchedulingService:
         planned_appointment: PlannedAppointment, 
         treatment_number: int
     ) -> Appointment:
+
+        PA_space_id = planned_appointment.window.space_id
+        PA_start_time = planned_appointment.window.start_time
+        PA_end_time = planned_appointment.window.end_time
+
+
+        overlapping = self._slot_repo.get_booked_in_range(PA_space_id, PA_start_time, PA_end_time)
+        if overlapping:
+            raise SlotUnavailableError(PA_space_id, PA_start_time)
         
         slot = TreatmentSlot(
             id = None, 
-            space_id = planned_appointment.window.space_id,
-            start_time = planned_appointment.window.start_time, 
-            end_time = planned_appointment.window.end_time
+            space_id = PA_space_id,
+            start_time = PA_start_time, 
+            end_time = PA_end_time
         )
         savedSlot = self._slot_repo.save(slot) # Have to create slot first to fetch if, so it can be plugged into appointment
 
