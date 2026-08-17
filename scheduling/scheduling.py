@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timedelta
 from django.db import IntegrityError
 
 from .repositories import AppointmentRepository, CourseRepository, SlotRepository, ScheduleRepository, SpaceRepository
-from.models import TREATMENT_DURATIONS, Appointment, AppointmentMissmatchError, AppointmentStatus, CourseBookingFailedError, CourseStatus, FreeInterval, PlannedAppointment, ScheduleClosure, ScheduleOverride, SlotUnavailableError, SpaceSchedule, TreatmentCourse, TreatmentSlot, TreatmentType, AvailableWindow, TreatmentSpace
+from.models import COPENHAGEN_TZ, TREATMENT_DURATIONS, Appointment, AppointmentMissmatchError, AppointmentStatus, CourseBookingFailedError, CourseStatus, FreeInterval, PlannedAppointment, ScheduleClosure, ScheduleOverride, SlotUnavailableError, SpaceSchedule, TreatmentCourse, TreatmentSlot, TreatmentType, AvailableWindow, TreatmentSpace
 
 # This makes scehduling dependant on django, if backend ever changes from django, import UnitOfWork or likevise to handle atomic transactiosn 
 from django.db.transaction import atomic 
@@ -124,8 +124,8 @@ class SchedulingService:
 
         while window_days <= max_search_days: # To avoid extreme intervals
             search_end_date = search_start_date + timedelta(days=window_days)
-            search_start = datetime.combine(search_start_date, time.min)
-            search_end = datetime.combine(search_end_date, time.min)
+            search_start = datetime.combine(search_start_date, time.min, COPENHAGEN_TZ)
+            search_end = datetime.combine(search_end_date, time.min, COPENHAGEN_TZ)
 
             # Repo calls
             rules = []
