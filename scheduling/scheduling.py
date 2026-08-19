@@ -69,7 +69,7 @@ class SchedulingService:
                     self.book_appointment(saved_course.id, planned_appointments[i], starting_treatment_number)
                     starting_treatment_number += 1
                 except SlotUnavailableError as e:
-                    raise CourseBookingFailedError(failed_at_appointment=i + 1, underlying=e) from None
+                    raise CourseBookingFailedError(failed_at_appointment=starting_treatment_number, underlying=e) from None
 
         return saved_course
         
@@ -248,12 +248,33 @@ class SchedulingService:
             if current_appointment is None:
                 raise ValueError(f"No scheduled appointment found for treatment_number {current_treatment_number}")
             planned_appointment = PlannedAppointment(found, current_appointment .type, current_appointment .note)
-            proposals.append(RescheduleProposal(current_appointment .id, planned_appointment, course.id, current_treatment_number))
+            proposals.append(RescheduleProposal(current_appointment.id, current_appointment.slot_id, planned_appointment, course.id, current_treatment_number))
             current_treatment_number += 1
             
             next_earliest = found_date + timedelta(days=min_interval_days)
 
         return proposals, flagged
+
+    def book_cascade(
+            self, 
+            propsals: list[RescheduleProposal]
+            ) -> TreatmentCourse: # commit RescheduleProposals to db
+        if not propsals:
+            raise ValueError("Must provide non-empty list of RescheduleProposals") 
+        course_id = propsals[0].course_id
+        course = self._course_repo.get_by_id(course_id)
+        if course is None:
+            raise ValueError(f"Could not fetch course wiht id: {course_id}")
+        with atomic():
+            for p in propsals:
+                try:
+                    self._appointment_repo.cancel(p.existing_appointment_id) # leaves logging trail
+                    self._slot_repo.unbook(p.old_slot_id) # just pure cleanup 
+                    self.book_appointment(p.course_id, p.planned, p.treatment_number)
+                except SlotUnavailableError as e:
+                    raise CourseBookingFailedError(failed_at_appointment=p.treatment_number, underlying=e) from None
+                
+        return course
         
 
     def reschedule_single_appointment(
