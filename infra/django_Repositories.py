@@ -100,17 +100,8 @@ class DjangoSlotRepository:
 
         return self._to_domain(orm_obj)
 
-    def unbook(self, slot_id: int) -> Appointment | None:
-        with transaction.atomic():
-            try:
-                orm_appt = ORMAppointment.objects.select_related("slot").get(
-                    slot_id=slot_id, is_active=True
-                )
-            except ORMAppointment.DoesNotExist:
-                return None
-            appt = DjangoAppointmentRepository._to_domain(orm_appt)
-            ORMSlot.objects.filter(id=slot_id).delete()
-        return appt
+    def unbook(self, slot_id: int) -> None:
+        ORMSlot.objects.filter(id=slot_id).delete()
 
     @staticmethod
     def _to_domain(orm_obj: ORMSlot) -> TreatmentSlot:

@@ -91,6 +91,15 @@ class TreatmentAppointment(models.Model):
     updated_at = models.DateTimeField(blank=True, auto_now=True)
     #Soft delete
     is_active = models.BooleanField(default=True)
+    
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["course", "treatment_number"],
+                condition=models.Q(is_active=True),
+                name="unique_active_course_treatment_number",
+            )
+        ]
 
 class SpaceSchedule(models.Model):
     space = models.ForeignKey(TreatmentSpace, on_delete=models.CASCADE)

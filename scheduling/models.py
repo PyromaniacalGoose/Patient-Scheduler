@@ -72,7 +72,7 @@ class Appointment:
         if self.treatment_number <= 0:
             raise ValueError("treatment_number must be above 0")
 
-def _require_aware(*values: datetime) -> None:
+def _require_aware(*values: datetime) -> None: # Used to ensure any datetime is timezone aware
     for v in values:
         if v.tzinfo is None:
             raise ValueError(f"datetime {v!r} must be timezone-aware")
@@ -140,6 +140,7 @@ class PlannedAppointment:
 @dataclass(frozen=True) # used as an intermediary when rescheduling appoinments
 class RescheduleProposal:
     existing_appointment_id: int
+    old_slot_id: int
     planned: PlannedAppointment
     course_id: int
     treatment_number: int

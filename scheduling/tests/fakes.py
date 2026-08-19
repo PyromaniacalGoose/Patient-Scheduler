@@ -126,9 +126,6 @@ class FakeSlotRepository:
     def __init__(self):
         self._data: dict[int, TreatmentSlot] = {}
         self._next_id = 1
-        # slot_id -> Appointment, needed only to support unbook()'s return value.
-        # Mirrors the real DjangoSlotRepository reaching into appointment data
-        self._appointment_by_slot: dict[int, Appointment] = {}
 
     def get_by_id(self, slot_id: int) -> TreatmentSlot | None:
         return self._data.get(slot_id)
@@ -141,10 +138,8 @@ class FakeSlotRepository:
             if s.space_id == space_id and s.start_time < end and s.end_time > start
         ]
 
-    def unbook(self, slot_id: int) -> Appointment | None:
-        appt = self._appointment_by_slot.pop(slot_id, None)
+    def unbook(self, slot_id: int) -> None:
         self._data.pop(slot_id, None)
-        return appt
 
     def save(self, slot: TreatmentSlot) -> TreatmentSlot:
         if slot.id is None:
@@ -160,7 +155,3 @@ class FakeSlotRepository:
                 raise ValueError("seeded slots must have an id")
             self._data[s.id] = s
             self._next_id = max(self._next_id, s.id + 1)
-
-    def link_appointment_to_slot(self, slot_id: int, appointment: Appointment) -> None:
-        '''Test-only: registers which appointment occupies a slot, so unbook() can return it.'''
-        self._appointment_by_slot[slot_id] = appointment
