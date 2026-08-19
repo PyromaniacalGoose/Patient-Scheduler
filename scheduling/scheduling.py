@@ -282,11 +282,21 @@ class SchedulingService:
         appointment_id: int,
         new_window: AvailableWindow,
     ) -> Appointment:
-        """
-        Moves exactly one appointment to a specific, already-chosen window, no cascade,
-        no re-searching. Unbooks the old slot, books the new one, updates the appointment.
-        Raises SlotUnavailableError if new_window is no longer free.
-        """
+        with atomic():
+            old_appointment = self._appointment_repo.get_by_id(appointment_id)
+
+            if old_appointment is None:
+                raise ValueError(f"Could not find appointment with id: {appointment_id}")
+
+            new_appointment = PlannedAppointment(
+                new_window,
+                old_appointment.type,
+                old_appointment.note,
+            )
+            self._appointment_repo.cancel(appointment_id) 
+            self._slot_repo.unbook(old_appointment.old_slot_id)
+            self.book_appointment(old_appointment.course_id, new_appointment, old_appointment.treatment_number)
+
 
 
 
@@ -439,10 +449,12 @@ def edit_planned_appointment(
         new_window: AvailableWindow | None = None,
         new_note: str | None = None,
     ) -> PlannedAppointment:
-        """
-        Pure, no I/O — returns a new PlannedAppointment with the given field(s) swapped in
-        (via replace()), re-running __post_init__'s duration check. Used during the
-        planning/review phase, before book_course is ever called, so a user can manually
-        adjust individual proposed windows/notes without re-running the whole search.
-        Does NOT verify new_window is actually free — that's checked at book_course time.
-        """
+        changes = {}
+
+        if new_window is not None:
+            changes["window"] = new_window
+
+        if new_note is not None:
+            changes["note"] = new_note
+
+        return replace(planned, **changes)
