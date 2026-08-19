@@ -137,6 +137,14 @@ class PlannedAppointment:
                 f"{self.treatment_type.name} (needs {required})"
             )
 
+@dataclass(frozen=True) # used as an intermediary when rescheduling appoinments
+class RescheduleProposal:
+    existing_appointment_id: int
+    planned: PlannedAppointment
+    course_id: int
+    treatment_number: int
+
+
 class SlotUnavailableError(Exception):
     # Raised when attempting to book a space-time window that's already taken.
     def __init__(self, space_id: int, start_time: datetime):
@@ -172,3 +180,4 @@ class CourseBookingFailedError(Exception):
             f"Booking failed at appointment {failed_at_appointment}: "
             f"slot at space {underlying.space_id}, {underlying.start_time} is no longer available"
         )
+

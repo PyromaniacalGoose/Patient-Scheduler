@@ -4,7 +4,7 @@ from datetime import date, datetime, time, timedelta
 from django.db import IntegrityError
 
 from .repositories import AppointmentRepository, CourseRepository, SlotRepository, ScheduleRepository, SpaceRepository
-from.models import COPENHAGEN_TZ, TREATMENT_DURATIONS, Appointment, AppointmentMissmatchError, AppointmentStatus, CourseBookingFailedError, CourseStatus, FreeInterval, PlannedAppointment, ScheduleClosure, ScheduleOverride, SlotUnavailableError, SpaceSchedule, TreatmentCourse, TreatmentSlot, TreatmentType, AvailableWindow, TreatmentSpace
+from.models import COPENHAGEN_TZ, TREATMENT_DURATIONS, Appointment, AppointmentMissmatchError, AppointmentStatus, CourseBookingFailedError, CourseStatus, FreeInterval, PlannedAppointment, RescheduleProposal, ScheduleClosure, ScheduleOverride, SlotUnavailableError, SpaceSchedule, TreatmentCourse, TreatmentSlot, TreatmentType, AvailableWindow, TreatmentSpace
 
 # This makes scehduling dependant on django, if backend ever changes from django, import UnitOfWork or likevise to handle atomic transactiosn 
 from django.db.transaction import atomic 
@@ -55,6 +55,7 @@ class SchedulingService:
         course: TreatmentCourse,
         planned_appointments: list[PlannedAppointment],
         number_of_appointments: int,
+        starting_treatment_number = 1
     ) -> TreatmentCourse:
         if number_of_appointments != len(planned_appointments):
             raise AppointmentMissmatchError(planned_appointments, number_of_appointments)
@@ -65,14 +66,15 @@ class SchedulingService:
 
             for i in range(number_of_appointments):
                 try:
-                    self.book_appointment(saved_course.id, planned_appointments[i], i + 1)
+                    self.book_appointment(saved_course.id, planned_appointments[i], starting_treatment_number)
+                    starting_treatment_number += 1
                 except SlotUnavailableError as e:
                     raise CourseBookingFailedError(failed_at_appointment=i + 1, underlying=e) from None
 
         return saved_course
         
 
-    '''Books singular appointment and returns the saved appointment with id'''
+    '''Books singular appointment and returns the saved appointment with id, should always be called as a transaction'''
     def book_appointment(
         self, 
         course_id: int, 
@@ -156,7 +158,7 @@ class SchedulingService:
         duration_minutes: int,
     ) -> tuple[list[AvailableWindow], list[bool]] | None: 
         
-        windows: list[date] = []
+        windows: list[AvailableWindow] = []
         flagged: list[bool] = [] # Flag to indicate if we've gone above soft cealing 
         next_earliest = earliest_start 
         space_ids = [s.id for s in self._space_repo.get_all()]
@@ -181,19 +183,78 @@ class SchedulingService:
     def cascade_reschedule( # Will need a commit method like the book_course
         self,
         appointment_id: int,
-        reason: AppointmentStatus,  # e.g. NO_SHOW — the trigger for the cascade
         min_interval_days: int,
         soft_preferred_days: int,
-        space_ids: list[int],
-    ) -> tuple[list[Appointment], list[bool]] | None:
-        """
-        Given one appointment (e.g. a no-show), proposes new dates for it and every
-        subsequent SCHEDULED appointment in the same course, each re-anchored off the
-        previous appointment's new actual date (per the min_interval_days floor).
-        Returns proposed (appointment, moved) pairs and a soft-limit-exceeded flag list,
-        mirroring plan_course_dates's shape — does NOT commit; caller must confirm,
-        then call something like commit_cascade(...) to persist.
-        """
+        earliest_start: date | None = None
+    ) -> tuple[list[RescheduleProposal], list[bool]] | None:
+        flagged: list[bool] = []
+        proposals: list[RescheduleProposal] = []
+        old_treatment_number_to_appointment: dict[int, Appointment] = {}
+        MIN_BOOKING_LEAD_DAYS = 1  # patients need at least this much notice before an appointment
+
+        old_appointment = self._appointment_repo.get_by_id(appointment_id)
+        
+        if old_appointment is None:
+            raise ValueError("Must give a real appoinment id to reschedule")
+
+        if earliest_start is None:
+            old_appointment_slot = self._slot_repo.get_by_id(old_appointment.slot_id)
+            if old_appointment_slot is None:
+                raise ValueError("Could not find the slot for the appointment being rescheduled")
+            
+            original_date = old_appointment_slot.start_time.date()
+            today = date.today()
+            lead_time_floor = today + timedelta(days=MIN_BOOKING_LEAD_DAYS)
+
+            if original_date >= today: #if we're rescheduling an appointment that's planned for today or in the future
+                collision_avoidance_floor  = original_date + timedelta(days=1) + timedelta(days=MIN_BOOKING_LEAD_DAYS)
+                earliest_start = max(collision_avoidance_floor, lead_time_floor) # To ensure that it adheres to MIN_BOOKING_LEAD_DAYS
+            else: 
+                earliest_start = lead_time_floor #if we rescheduling an old appointment 
+
+        space_ids = [s.id for s in self._space_repo.get_all()]
+        course = self._course_repo.get_by_id(old_appointment.course_id)
+        course_appointments = self._appointment_repo.get_planned_course_appointments(course.id)
+
+        current_treatment_number = old_appointment.treatment_number
+        for app in course_appointments:
+            if app.treatment_number >= current_treatment_number:
+                old_treatment_number_to_appointment[app.treatment_number] = app
+
+            reschedule_number = len(old_treatment_number_to_appointment)
+
+        duration = TREATMENT_DURATIONS[old_appointment.type] # Treatment is always the same for a course
+
+        # build dict of old appointments
+        for app in course_appointments:
+            if app.treatment_number >= current_treatment_number:
+                old_treatment_number_to_appointment[app.treatment_number] = app
+
+        next_earliest = earliest_start
+        
+        for _ in range(reschedule_number): 
+            found = self.find_earliest_available_on_or_after(
+                next_earliest, duration, space_ids
+            )
+            if found is None:
+                return None
+
+            found_date = found.start_time.date()
+            soft_limit = next_earliest + timedelta(days=(soft_preferred_days - min_interval_days))
+            flagged.append(found_date > soft_limit)
+
+            # build RescheduleProposal
+            current_appointment  = old_treatment_number_to_appointment.get(current_treatment_number)
+            if current_appointment is None:
+                raise ValueError(f"No scheduled appointment found for treatment_number {current_treatment_number}")
+            planned_appointment = PlannedAppointment(found, current_appointment .type, current_appointment .note)
+            proposals.append(RescheduleProposal(current_appointment .id, planned_appointment, course.id, current_treatment_number))
+            current_treatment_number += 1
+            
+            next_earliest = found_date + timedelta(days=min_interval_days)
+
+        return proposals, flagged
+        
 
     def reschedule_single_appointment(
         self,
@@ -201,12 +262,10 @@ class SchedulingService:
         new_window: AvailableWindow,
     ) -> Appointment:
         """
-        Moves exactly one appointment to a specific, already-chosen window — no cascade,
+        Moves exactly one appointment to a specific, already-chosen window, no cascade,
         no re-searching. Unbooks the old slot, books the new one, updates the appointment.
         Raises SlotUnavailableError if new_window is no longer free.
         """
-
-
 
 
 
