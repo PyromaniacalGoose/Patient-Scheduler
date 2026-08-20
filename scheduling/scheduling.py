@@ -444,7 +444,6 @@ def find_windows_for_duration(
     return windows
 
 def edit_planned_appointment(
-        self,
         planned: PlannedAppointment,
         new_window: AvailableWindow | None = None,
         new_note: str | None = None,
