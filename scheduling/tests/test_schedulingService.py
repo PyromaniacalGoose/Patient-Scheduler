@@ -4,9 +4,11 @@ from datetime import datetime, date, time, timedelta
 import pytest
 
 from scheduling.models import (
+    Appointment,
     AppointmentStatus,
     AvailableWindow,
     COPENHAGEN_TZ,
+    CourseBookingFailedError,
     CourseStatus,
     PlannedAppointment,
     SlotUnavailableError,
@@ -54,6 +56,35 @@ def open_space(repos):
         ]
     )
     return space
+
+@pytest.fixture
+def course_with_four_appointments(repos, open_space):
+    '''A course with appointments 1-4 already booked, 8 weeks apart, all SCHEDULED.'''
+    course = repos["course_repo"].save(
+        TreatmentCourse(id=None, patient_id=1, planned_treatments=4, status=CourseStatus.ACTIVE)
+    )
+
+    base = date(2026, 1, 5)  # a Monday
+    appointments = []
+    for i in range(4):
+        appt_date = base + timedelta(days=56 * i)
+        slot = repos["slot_repo"].save(
+            TreatmentSlot(
+                id=None, space_id=1,
+                start_time=datetime.combine(appt_date, time(8, 0), tzinfo=COPENHAGEN_TZ),
+                end_time=datetime.combine(appt_date, time(12, 30), tzinfo=COPENHAGEN_TZ),
+            )
+        )
+        appt = repos["appointment_repo"].save(
+            Appointment(
+                id=None, course_id=course.id, slot_id=slot.id,
+                treatment_number=i + 1, status=AppointmentStatus.SCHEDULED,
+                type=TreatmentType.V1, note="",
+            )
+        )
+        appointments.append(appt)
+
+    return course, appointments
 
 
 def dt(y, m, d, h=0, mi=0):
@@ -148,7 +179,7 @@ class TestPlanCourseDates:
             assert gap >= 56
 
     def test_flags_appointments_that_land_beyond_the_soft_preference(self, service, repos, open_space):
-        # Book out every day for ~10 weeks straight after the second appointment's floor
+        # book out every day for ~10 weeks straight after the second appointment's floor
         # so the 3rd appointment is forced past the 11-week soft preference.
         blocked_start = date(2026, 8, 17) + timedelta(days=56 * 2)
         for i in range(40):
@@ -209,3 +240,148 @@ class TestBookCourse:
 
         with pytest.raises(Exception):  # AppointmentMissmatchError
             service.book_course(course, planned, number_of_appointments=2)
+
+class TestCascadeReschedule:
+    def test_raises_for_unknown_appointment_id(self, service):
+        with pytest.raises(ValueError):
+            service.cascade_reschedule(
+                appointment_id=9999, min_interval_days=56, soft_preferred_days=77
+            )
+
+    def test_proposes_new_dates_for_the_missed_appointment_and_everything_after(
+        self, service, course_with_four_appointments
+    ):
+        course, appointments = course_with_four_appointments
+        missed = appointments[1]  # treatment_number 2
+
+        result = service.cascade_reschedule(
+            appointment_id=missed.id, min_interval_days=56, soft_preferred_days=77,
+            today=date(2026, 3, 10),
+        )
+        assert result is not None
+        proposals, flagged = result
+
+        assert len(proposals) == 3
+        assert [p.treatment_number for p in proposals] == [2, 3, 4]
+        assert all(p.course_id == course.id for p in proposals)
+        assert all(p.existing_appointment_id == a.id for p, a in zip(proposals, appointments[1:]))
+
+    def test_subsequent_proposed_dates_respect_the_interval_floor(
+        self, service, course_with_four_appointments
+    ):
+        course, appointments = course_with_four_appointments
+        missed = appointments[1]
+
+        result = service.cascade_reschedule(
+            appointment_id=missed.id, min_interval_days=56, soft_preferred_days=77,
+            today=date(2026, 3, 10),
+        )
+        assert result is not None
+        proposals, _ = result
+
+        for prev, nxt in zip(proposals, proposals[1:]):
+            gap = (nxt.planned.window.start_time.date() - prev.planned.window.start_time.date()).days
+            assert gap >= 56
+
+    def test_no_show_in_the_past_searches_from_today_with_lead_time(
+        self, service, course_with_four_appointments
+    ):
+        course, appointments = course_with_four_appointments
+        missed = appointments[1]  # original date 2026-03-02
+
+        fixed_today = date(2026, 3, 10)  # well after the missed appointment's original date
+
+        result = service.cascade_reschedule(
+            appointment_id=missed.id, min_interval_days=56, soft_preferred_days=77,
+            today=fixed_today,
+        )
+        assert result is not None
+        proposals, _ = result
+
+        assert proposals[0].planned.window.start_time.date() >= fixed_today + timedelta(days=1)
+
+    def test_future_cancellation_does_not_land_on_the_same_day_as_the_original(
+        self, service, course_with_four_appointments
+    ):
+        course, appointments = course_with_four_appointments
+        missed = appointments[1]  # original date 2026-03-02
+
+        fixed_today = date(2026, 2, 25)  # cancelled 5 days ahead of the original date
+
+        result = service.cascade_reschedule(
+            appointment_id=missed.id, min_interval_days=56, soft_preferred_days=77,
+            today=fixed_today,
+        )
+        assert result is not None
+        proposals, _ = result
+
+        original_date = date(2026, 3, 2)
+        assert proposals[0].planned.window.start_time.date() > original_date
+
+class TestBookCascade:
+    def test_raises_on_empty_proposal_list(self, service):
+        with pytest.raises(ValueError):
+            service.book_cascade([])
+
+    @pytest.mark.django_db
+    def test_commits_proposals_cancelling_old_appointments_and_creating_new_ones(
+        self, service, repos, course_with_four_appointments
+    ):
+        course, appointments = course_with_four_appointments
+        missed = appointments[1]
+
+        result = service.cascade_reschedule(
+            appointment_id=missed.id, min_interval_days=56, soft_preferred_days=77
+        )
+        proposals, _ = result
+
+        service.book_cascade(proposals)
+
+        # old appointments 2, 3, 4 should now be cancelled
+        for old_appt in appointments[1:]:
+            updated = repos["appointment_repo"].get_by_id(old_appt.id)
+            assert updated is None or updated.status == AppointmentStatus.CANCELLED
+
+        # new appointments should exist for treatment numbers 2, 3, 4 with SCHEDULED status
+        all_appointments = repos["appointment_repo"]._data.values()
+        new_ones = [
+            a for a in all_appointments
+            if a.course_id == course.id and a.status == AppointmentStatus.SCHEDULED and a.treatment_number in (2, 3, 4)
+        ]
+        assert len(new_ones) == 3
+
+    @pytest.mark.django_db
+    def test_raises_course_booking_failed_error_on_collision(
+        self, service, repos, course_with_four_appointments
+    ):
+        course, appointments = course_with_four_appointments
+        missed = appointments[1]
+
+        result = service.cascade_reschedule(
+            appointment_id=missed.id, min_interval_days=56, soft_preferred_days=77
+        )
+        proposals, _ = result
+
+        # sabotage: pre-book the exact window the first proposal wants, in a *different* course,
+        # so book_cascade collides on it
+        stolen_window = proposals[0].planned.window
+        repos["slot_repo"].save(
+            TreatmentSlot(id=None, space_id=stolen_window.space_id,
+                          start_time=stolen_window.start_time, end_time=stolen_window.end_time)
+        )
+
+        with pytest.raises(CourseBookingFailedError):
+            service.book_cascade(proposals)
+
+
+class _FixedDate(date):
+    _fixed_today = None
+
+    @classmethod
+    def today(cls):
+        return cls._fixed_today
+
+
+def _patch_today(monkeypatch, fixed_date):
+    _FixedDate._fixed_today = fixed_date
+    monkeypatch.setattr("scheduling.scheduling.date", _FixedDate)

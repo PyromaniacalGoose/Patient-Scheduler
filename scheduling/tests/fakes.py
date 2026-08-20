@@ -1,6 +1,6 @@
 from dataclasses import replace
 from datetime import date
-from infra.models import ScheduleClosure, ScheduleOverride, SpaceSchedule, TreatmentSpace
+from infra.models import AppointmentStatus, ScheduleClosure, ScheduleOverride, SpaceSchedule, TreatmentSpace
 from scheduling.models import Appointment
 
 '''Fake repos for testing schedulingService'''
@@ -20,7 +20,11 @@ class FakeAppointmentRepository:
         self._data[appointment.id] = appointment
         return appointment
 
-    def get_planned_course_appointments(self, course_id: int):... # isn't used by scheduling service
+    def get_planned_course_appointments(self, course_id: int) -> list[Appointment]:
+        return sorted(
+            (a for a in self._data.values() if a.course_id == course_id and a.status == AppointmentStatus.SCHEDULED),
+            key=lambda a: a.treatment_number,
+        )
 
     def cancel(self, appointment_id: int):
         self._data.pop(appointment_id)

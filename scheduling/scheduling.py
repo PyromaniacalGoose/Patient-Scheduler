@@ -185,7 +185,8 @@ class SchedulingService:
         appointment_id: int,
         min_interval_days: int,
         soft_preferred_days: int,
-        earliest_start: date | None = None
+        earliest_start: date | None = None,
+        today: date | None = None,
     ) -> tuple[list[RescheduleProposal], list[bool]] | None:
         flagged: list[bool] = []
         proposals: list[RescheduleProposal] = []
@@ -221,15 +222,8 @@ class SchedulingService:
             if app.treatment_number >= current_treatment_number:
                 old_treatment_number_to_appointment[app.treatment_number] = app
 
-            reschedule_number = len(old_treatment_number_to_appointment)
-
+        reschedule_number = len(old_treatment_number_to_appointment)
         duration = TREATMENT_DURATIONS[old_appointment.type] # Treatment is always the same for a course
-
-        # build dict of old appointments
-        for app in course_appointments:
-            if app.treatment_number >= current_treatment_number:
-                old_treatment_number_to_appointment[app.treatment_number] = app
-
         next_earliest = earliest_start
         
         for _ in range(reschedule_number): 
