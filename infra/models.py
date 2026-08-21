@@ -3,7 +3,9 @@ Django ORM for persistent data storage, striving to adhere to 3NF
 
 """
 
+from django.contrib.postgres.constraints import ExclusionConstraint
 from django.db import models
+from django.db.models import Func
 from django.utils import timezone
 from .validators import validate_cpr
 
@@ -55,12 +57,15 @@ class TreatmentSlot(models.Model):
 
     class Meta:
         constraints = [
-            models.UniqueConstraint(
-                fields = ["space", "start_time"],
-                name = "unique_space_start_time",
+            ExclusionConstraint(
+                name="no_overlapping_slots_per_space",
+                expressions=[
+                    ("space", "="),
+                    (Func("start_time", "end_time", function="tstzrange"), "&&"),
+                ],
             )
         ]
-
+        
 #For representing holidays or other workdays with no open slots, can also model closure of individual treatment spaces
 class ScheduleClosure(models.Model):
     space = models.ForeignKey(
@@ -109,11 +114,6 @@ class SpaceSchedule(models.Model):
 
     class Meta:
         unique_together = ("space", "weekday")
-
-class ScheduleClosure(models.Model):
-    space = models.ForeignKey(TreatmentSpace, null=True, blank=True, on_delete=models.CASCADE)
-    date = models.DateField()
-    reason = models.CharField(max_length=200, blank=True)
 
 class ScheduleOverride(models.Model):
     space = models.ForeignKey(TreatmentSpace, null=True, blank=True, on_delete=models.CASCADE)
