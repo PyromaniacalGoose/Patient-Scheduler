@@ -1,0 +1,41 @@
+/* Base = unavailable */
+.fc .fc-timegrid-body {
+    background: #d3d3d3;
+}
+
+/* Left time axis */
+.fc .fc-timegrid-axis {
+    background: #f5f5f5;
+}
+
+/* Available periods */
+.fc .fc-bg-event {
+    opacity: 0.7;
+}
+
+/* Grid lines */
+.fc .fc-timegrid-slot {
+    border-color: #666;
+}
+
+.fc .fc-timegrid-col {
+    border-color: #666;
+}
+.fc {
+    --fc-today-bg-color: #6496ff1a
+}
+
+ /* Today's entire column */
+.fc .fc-timegrid-col.fc-day-today {
+    background-color: transparent;
+    position: relative;
+}
+
+.fc .fc-timegrid-col.fc-day-today::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: #6496ff1a;
+    pointer-events: none;
+    z-index: 2;
+}
