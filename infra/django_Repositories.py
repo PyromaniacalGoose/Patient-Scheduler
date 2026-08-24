@@ -200,7 +200,7 @@ class DjangoScheduleRepository:
             close_time=orm_obj.close_time,
         )
 
-class SpaceRepository: 
+class DjangoSpaceRepository: 
     def get_all(self) -> list[TreatmentSpace]:
         orm_spaces = ORMSpace.objects.all()
         return [self._to_domain(a) for a in orm_spaces]
