@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <title>Schedule</title>
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@fullcalendar/core@6.1.11/locales/da.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/locales-all.global.min.js"></script>
 </head>
 <body>
     <div id="calendar" style="max-width: 1000px; margin: 40px auto;"></div>
@@ -14,19 +14,27 @@
             const calendarEl = document.getElementById('calendar');
             const calendar = new FullCalendar.Calendar(calendarEl, {
                 initialView: 'timeGridWeek',
-                locale: 'da',
-                firstDay: 1,  // week starts monday, not sunday
+                locale: 'en-gb',
+                firstDay: 1,
                 headerToolbar: {
                     left: 'prev,next today',
                     center: 'title',
                     right: 'dayGridMonth,timeGridWeek,timeGridDay'
                 },
-                events: function (info, successCallback, failureCallback) {
-                    fetch(`/calendar/events/?start=${info.startStr}&end=${info.endStr}`)
-                        .then(response => response.json())
-                        .then(data => successCallback(data))
-                        .catch(error => failureCallback(error));
-                }
+                eventSources: [
+                    {
+                        events: function (info, successCallback, failureCallback) {
+                            fetch(`/calendar/events/?start=${info.startStr}&end=${info.endStr}`)
+                                .then(r => r.json()).then(successCallback).catch(failureCallback);
+                        }
+                    },
+                    {
+                        events: function (info, successCallback, failureCallback) {
+                            fetch(`/calendar/availability/?start=${info.startStr}&end=${info.endStr}`)
+                                .then(r => r.json()).then(successCallback).catch(failureCallback);
+                        }
+                    }
+                ]
             });
             calendar.render();
         });

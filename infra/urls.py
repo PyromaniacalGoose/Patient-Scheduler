@@ -27,5 +27,6 @@ urlpatterns = [
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path('admin/', admin.site.urls),
     path("calendar/", views.calendar_page, name="calendar_page"),
-    path("calendar/events/", views.calendar_events, name="calendar_events")
+    path("calendar/events/", views.calendar_events, name="calendar_events"),
+    path("calendar/availability/", views.calendar_availability, name="calendar_availability"),
 ]

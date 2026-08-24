@@ -47,6 +47,10 @@ class DjangoAppointmentRepository:
         ).order_by("treatment_number")
         return [self._to_domain(a) for a in orm_appointments]
 
+    def get_by_slot_ids(self, slot_ids: list[int]) -> list[Appointment]:
+        orm_appointments = ORMAppointment.objects.filter(slot_id__in=slot_ids, is_active=True)
+        return [self._to_domain(a) for a in orm_appointments]
+
     #Soft delete, for loggin purposes 
     #TODO: ADD a way to cleanup the DB of soft deleted entries
     def cancel(self, appointment_id: int) -> None:
