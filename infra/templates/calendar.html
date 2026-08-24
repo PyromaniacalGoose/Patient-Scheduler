@@ -6,42 +6,44 @@
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/locales-all.global.min.js"></script>
     <style>
-        /* Unavailable time */
-        .fc .fc-timegrid-slot,
-        .fc .fc-timegrid-col {
-            background-color: #d3d3d3;
+        /* Base = unavailable */
+        .fc .fc-timegrid-body {
+            background: #d3d3d3;
         }
 
-        /* Time-axis column on the left */
+        /* Left time axis */
         .fc .fc-timegrid-axis {
-            background-color: #f5f5f5;
+            background: #f5f5f5;
         }
 
-        /* Free/available periods */
+        /* Available periods */
         .fc .fc-bg-event {
             opacity: 0.7;
         }
 
-        /* Dark grid lines */
+        /* Grid lines */
         .fc .fc-timegrid-slot {
-            border-color: #666666;
+            border-color: #666;
         }
 
         .fc .fc-timegrid-col {
-            border-color: #666666;
+            border-color: #666;
         }
 
-        /* Today's entire column */
+        .fc {
+            --fc-today-bg-color: #6496ff1a
+        }
+         /* Today's entire column */
         .fc .fc-timegrid-col.fc-day-today {
             background-color: transparent;
             position: relative;
         }
-
+    
         .fc .fc-timegrid-col.fc-day-today::after {
             content: "";
             position: absolute;
             inset: 0;
-            background: rgba(100, 150, 255, 0.10);
+            background: #6496ff1a;
             pointer-events: none;
             z-index: 2;
         }
