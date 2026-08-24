@@ -5,6 +5,47 @@
     <title>Schedule</title>
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/index.global.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/locales-all.global.min.js"></script>
+    <style>
+        /* Unavailable time */
+        .fc .fc-timegrid-slot,
+        .fc .fc-timegrid-col {
+            background-color: #d3d3d3;
+        }
+
+        /* Time-axis column on the left */
+        .fc .fc-timegrid-axis {
+            background-color: #f5f5f5;
+        }
+
+        /* Free/available periods */
+        .fc .fc-bg-event {
+            opacity: 0.7;
+        }
+
+        /* Dark grid lines */
+        .fc .fc-timegrid-slot {
+            border-color: #666666;
+        }
+
+        .fc .fc-timegrid-col {
+            border-color: #666666;
+        }
+
+        /* Today's entire column */
+        .fc .fc-timegrid-col.fc-day-today {
+            background-color: transparent;
+            position: relative;
+        }
+
+        .fc .fc-timegrid-col.fc-day-today::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: rgba(100, 150, 255, 0.10);
+            pointer-events: none;
+            z-index: 2;
+        }
+    </style>
 </head>
 <body>
     <div id="calendar" style="max-width: 1000px; margin: 40px auto;"></div>
@@ -24,14 +65,34 @@
                 eventSources: [
                     {
                         events: function (info, successCallback, failureCallback) {
-                            fetch(`/calendar/events/?start=${info.startStr}&end=${info.endStr}`)
-                                .then(r => r.json()).then(successCallback).catch(failureCallback);
+                            const params = new URLSearchParams({
+                                                start: info.startStr,
+                                                end: info.endStr
+                                            });
+                                        
+                                            fetch(`/calendar/events/?${params}`)
+                                                .then(r => r.json())
+                                                .then(data => {
+                                                    console.log("BOOKED EVENTS:", data);
+                                                    successCallback(data);
+                                                })
+                                                .catch(failureCallback);
                         }
                     },
                     {
                         events: function (info, successCallback, failureCallback) {
-                            fetch(`/calendar/availability/?start=${info.startStr}&end=${info.endStr}`)
-                                .then(r => r.json()).then(successCallback).catch(failureCallback);
+                            const params = new URLSearchParams({
+                                start: info.startStr,
+                                end: info.endStr
+                            });
+                        
+                            fetch(`/calendar/availability/?${params}`)
+                                .then(r => r.json())
+                                .then(data => {
+                                    console.log("AVAILABILITY:", data);
+                                    successCallback(data);
+                                })
+                                .catch(failureCallback);
                         }
                     }
                 ]

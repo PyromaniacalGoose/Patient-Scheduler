@@ -70,9 +70,9 @@ def calendar_availability(request):
     space_repo = DjangoSpaceRepository()
     schedule_repo = DjangoScheduleRepository()
     slot_repo = DjangoSlotRepository()
-
     start = datetime.fromisoformat(request.GET.get("start"))
     end = datetime.fromisoformat(request.GET.get("end"))
+    
 
     space_ids = [s.id for s in space_repo.get_all()]
     rules = []
@@ -92,7 +92,7 @@ def calendar_availability(request):
             "start": fi.start_time.isoformat(),
             "end": fi.end_time.isoformat(),
             "display": "background",
-            "color": "#c8f7c5",  # light green = open/free
+            "color": "#ffffff", 
         }
         for fi in free_intervals
     ]
