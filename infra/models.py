@@ -38,7 +38,14 @@ class TreatmentSpace(models.Model):
     location = models.CharField(max_length=100, blank=True)
 
 class Patient(models.Model):
-    patient_number = models.IntegerField(unique=True)
+    patient_number = models.PositiveIntegerField(
+        unique=True, 
+        editable=False, 
+        db_default=models.expressions.RawSQL(
+            "nextval('infra_patient_number_seq')",
+            [],
+        ),
+    )
     first_name = models.CharField(max_length=30)
     last_name = models.CharField(max_length=60)
     gender = models.IntegerField(choices=Gender.choices, default=Gender.UNASSIGNED)

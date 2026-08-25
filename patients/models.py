@@ -9,7 +9,7 @@ class Gender(IntEnum):
 @dataclass(frozen=True)
 class PatientDetail:
     id: int | None
-    patient_number: int
+    patient_number: int | None
     first_name: str
     last_name: str
     CPR_number: str

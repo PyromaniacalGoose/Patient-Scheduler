@@ -29,4 +29,6 @@ urlpatterns = [
     path("calendar/", views.calendar_page, name="calendar_page"),
     path("calendar/events/", views.calendar_events, name="calendar_events"),
     path("calendar/availability/", views.calendar_availability, name="calendar_availability"),
+    path("calendar/register_patient/", views.register_patient, name="register_patient"),
+    path("calendar/patient/<int:patient_id>/", views.patient_detail, name="patient_detail"),
 ]

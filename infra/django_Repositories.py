@@ -234,6 +234,13 @@ class DjangoPatientRepository:
             return None
         return self._to_domain(orm_obj)
 
+    def get_by_id(self, patient_id: str) -> PatientDetail | None:
+        try:
+            orm_obj = ORMPatient.objects.get(id=patient_id, is_active=True)
+        except ORMCourse.DoesNotExist:
+            return None
+        return self._to_domain(orm_obj)
+
     def reactivate(self, patient_id: int) -> PatientDetail:
         orm_obj = ORMPatient.objects.get(id=patient_id)
         orm_obj.is_active = True
@@ -243,7 +250,6 @@ class DjangoPatientRepository:
     def save(self, patient: PatientDetail) -> PatientDetail:
         if patient.id is None:
             orm_obj = ORMPatient.objects.create(
-                patient_number = patient.patient_number,
                 first_name = patient.first_name,
                 last_name = patient.last_name,
                 gender = patient.gender.value,
@@ -260,7 +266,8 @@ class DjangoPatientRepository:
             orm_obj.is_active = patient.is_active
             orm_obj.save()
         return self._to_domain(orm_obj)
-
+    
+    @staticmethod
     def _to_domain(orm_obj: ORMPatient) -> PatientDetail:
         return PatientDetail(
             id=orm_obj.id,

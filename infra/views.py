@@ -1,10 +1,12 @@
 # infra/views.py
-from django.http import JsonResponse
-from django.contrib.auth.decorators import login_required
 from datetime import datetime
-from infra.django_Repositories import DjangoScheduleRepository, DjangoSlotRepository, DjangoAppointmentRepository, DjangoSpaceRepository
-from django.shortcuts import render
 
+from django.http import Http404, JsonResponse
+from infra.django_Repositories import DjangoPatientRepository, DjangoScheduleRepository, DjangoSlotRepository, DjangoAppointmentRepository, DjangoSpaceRepository
+from django.shortcuts import redirect, render
+from django.contrib.auth.decorators import login_required, permission_required
+
+from patients.PatientService import PatientService
 from scheduling.scheduling import compute_free_intervals
 
 
@@ -97,3 +99,33 @@ def calendar_availability(request):
         for fi in free_intervals
     ]
     return JsonResponse(events, safe=False)
+
+
+@login_required
+@permission_required("infra.can_book_appointments", raise_exception=True)
+def register_patient(request):
+    if request.method == "POST":
+        patient_service = PatientService(DjangoPatientRepository())
+        patient = patient_service.register_or_reactivate(
+            first_name=request.POST["first_name"],
+            last_name=request.POST["last_name"],
+            cpr=request.POST["cpr_number"],
+            gender=request.POST["gender"],
+        )
+        return redirect("patient_detail", patient_id=patient.id)
+
+    return render(request, "register_patient.html")
+
+@login_required
+def patient_detail(request, patient_id):
+    patient_repo = DjangoPatientRepository()
+    patient = patient_repo.get_by_id(patient_id)
+
+    if patient is None:
+        raise Http404("Patient not found")
+
+    return render(
+        request,
+        "patient_detail.html",
+        {"patient": patient},
+    )
