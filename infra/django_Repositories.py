@@ -2,10 +2,13 @@ from datetime import date, datetime
 
 from django.db import IntegrityError, transaction
 
+from patients.models import PatientDetail, Gender
+
 from .models import TreatmentAppointment as ORMAppointment
 from .models import TreatmentSlot as ORMSlot
 from .models import TreatmentCourse as ORMCourse
 from .models import TreatmentSpace as ORMSpace
+from .models import Patient as ORMPatient
 from .models import SpaceSchedule as ORMSpaceSchedule, ScheduleClosure as ORMScheduleClosure, ScheduleOverride as ORMScheduleOverride
 
 from scheduling.models import Appointment, AppointmentStatus, CourseStatus, ScheduleOverride, SlotUnavailableError, TreatmentCourse, TreatmentSlot, TreatmentSpace, TreatmentType, SpaceSchedule, ScheduleClosure
@@ -221,4 +224,50 @@ class DjangoSpaceRepository:
         return TreatmentSpace(
             id=orm_obj.id,
             name=orm_obj.name,
+        )
+
+class DjangoPatientRepository:
+    def get_by_cpr(self, cpr: str) -> PatientDetail | None:
+        try:
+            orm_obj = ORMPatient.objects.get(CPR_number=cpr)  # no is_active filter — intentional
+        except ORMPatient.DoesNotExist:
+            return None
+        return self._to_domain(orm_obj)
+
+    def reactivate(self, patient_id: int) -> PatientDetail:
+        orm_obj = ORMPatient.objects.get(id=patient_id)
+        orm_obj.is_active = True
+        orm_obj.save()
+        return self._to_domain(orm_obj)
+    
+    def save(self, patient: PatientDetail) -> PatientDetail:
+        if patient.id is None:
+            orm_obj = ORMPatient.objects.create(
+                patient_number = patient.patient_number,
+                first_name = patient.first_name,
+                last_name = patient.last_name,
+                gender = patient.gender.value,
+                CPR_number = patient.CPR_number,
+                is_active = patient.is_active,
+            )
+        else:
+            orm_obj = ORMPatient.objects.get(id=patient.id)
+            orm_obj.patient_number = patient.patient_number
+            orm_obj.first_name = patient.first_name
+            orm_obj.last_name = patient.last_name
+            orm_obj.gender = patient.gender.value
+            orm_obj.CPR_number = patient.CPR_number
+            orm_obj.is_active = patient.is_active
+            orm_obj.save()
+        return self._to_domain(orm_obj)
+
+    def _to_domain(orm_obj: ORMPatient) -> PatientDetail:
+        return PatientDetail(
+            id=orm_obj.id,
+            patient_number=orm_obj.patient_number,
+            first_name=orm_obj.first_name,
+            last_name=orm_obj.last_name,
+            CPR_number=orm_obj.CPR_number,
+            gender=Gender(orm_obj.gender),
+            is_active=orm_obj.is_active,
         )
