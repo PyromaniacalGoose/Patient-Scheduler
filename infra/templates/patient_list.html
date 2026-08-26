@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Patients</title>
+</head>
+<body>
+
+    <h1>Active Patients</h1>
+
+    {% if patients %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Patient Number</th>
+                    <th>First Name</th>
+                    <th>Last Name</th>
+                    <th>Gender</th>
+                    <th>CPR Number</th>
+                    <th></th>
+                </tr>
+            </thead>
+
+            <tbody>
+                {% for patient in patients %}
+                    <tr>
+                        <td>{{ patient.patient_number }}</td>
+                        <td>{{ patient.first_name }}</td>
+                        <td>{{ patient.last_name }}</td>
+                        <td>{{ patient.gender.name }}</td>
+                        <td>{{ patient.CPR_number }}</td>
+                        <td>
+                            <a href="{% url 'patient_detail' patient_id=patient.id %}">
+                                View
+                            </a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>There are no active patients.</p>
+    {% endif %}
+
+    <p>
+        <a href="{% url 'calendar_page' %}">Back to calendar</a>
+    </p>
+
+</body>
+</html>

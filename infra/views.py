@@ -129,3 +129,15 @@ def patient_detail(request, patient_id):
         "patient_detail.html",
         {"patient": patient},
     )
+
+@login_required
+def patient_list(request):
+    patient_repo = DjangoPatientRepository()
+    patients = patient_repo.get_active_patients()
+
+    return render(
+        request,
+        "patient_list.html",
+        {"patients": patients},
+    )
+    

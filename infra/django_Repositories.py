@@ -241,6 +241,13 @@ class DjangoPatientRepository:
             return None
         return self._to_domain(orm_obj)
 
+    def get_active_patients(self) -> list[PatientDetail]:
+        orm_patients = ORMPatient.objects.filter(
+            is_active=True,
+        )
+        return [self._to_domain(a) for a in orm_patients]
+
+
     def reactivate(self, patient_id: int) -> PatientDetail:
         orm_obj = ORMPatient.objects.get(id=patient_id)
         orm_obj.is_active = True

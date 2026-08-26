@@ -31,4 +31,5 @@ urlpatterns = [
     path("calendar/availability/", views.calendar_availability, name="calendar_availability"),
     path("calendar/register_patient/", views.register_patient, name="register_patient"),
     path("calendar/patient/<int:patient_id>/", views.patient_detail, name="patient_detail"),
+    path("calendar/patients/", views.patient_list, name="patient_list"),
 ]
