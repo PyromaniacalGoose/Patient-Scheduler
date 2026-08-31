@@ -246,7 +246,7 @@ class DjangoSpaceRepository:
 
     def get_by_id(self, space_id: int) -> TreatmentSpace | None:
         try:
-            orm_obj = ORMSpace.objects.get(id=space_id, is_active=True)
+            orm_obj = ORMSpace.objects.get(id=space_id)
         except ORMSpace.DoesNotExist:
             return None
         return self._to_domain(orm_obj)

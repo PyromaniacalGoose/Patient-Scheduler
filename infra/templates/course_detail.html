@@ -1,4 +1,7 @@
 <h1>Treatment Course</h1>
+    <p>
+        <a href="{% url 'calendar_page' %}">Back to calendar</a>
+    </p>
 <h2>Patient</h2>
 <p>
     <strong>Patient:</strong> {{ patient.patient_number }}
@@ -6,21 +9,23 @@
 <h2>Appointments</h2>
 {% if appointments %}
     <ul>
-        {% for appointment in appointments %}
+        {% for item in appointments %}
             <li>
                 <strong>
-                    {{ appointment.start_time|date:"j M Y" }}
+                    {{ item.slot.start_time|date:"j M Y" }}
                 </strong>
-                {{ appointment.start_time|time:"H:i" }}
-                –
-                {{ appointment.end_time|time:"H:i" }}
-
+            
+                {{ item.slot.start_time|time:"H:i" }}
+                -
+                {{ item.slot.end_time|time:"H:i" }}
+            
                 <br>
-                Space {{ appointment.space_id }}
-
-                {% if appointment.note %}
+            
+                Space {{ item.space.name }}
+            
+                {% if item.appointment.note %}
                     <br>
-                    Note: {{ appointment.note }}
+                    Note: {{ item.appointment.note }}
                 {% endif %}
             </li>
         {% endfor %}

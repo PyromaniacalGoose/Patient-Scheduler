@@ -412,6 +412,8 @@ def course_detail(request, course_id):
     course_repo = DjangoCourseRepository()
     appointment_repo = DjangoAppointmentRepository()
     patient_repo = DjangoPatientRepository()
+    space_repo = DjangoSpaceRepository()
+    slot_repo = DjangoSlotRepository()
 
     course = course_repo.get_by_id(course_id)
     if course is None:
@@ -422,8 +424,28 @@ def course_detail(request, course_id):
             raise Http404
 
     appointments = appointment_repo.get_planned_course_appointments(course_id)
+    appointment_details = []
+
+    for appointment in appointments:
+        slot = slot_repo.get_by_id(appointment.slot_id)
+
+        if slot is None:
+            continue  # or raise Http404 / handle this as a data integrity error
+
+        space = space_repo.get_by_id(slot.space_id)
+
+        if space is None:
+            continue
+
+        print(f"Space: {space.name}, slot: {slot.start_time}, appointment: {appointment.note}")
+
+        appointment_details.append({
+            "appointment": appointment,
+            "slot": slot,
+            "space": space,
+        })
 
     return render(request, "course_detail.html", {
         "patient": patient,
-        "appointments": appointments,
+        "appointments": appointment_details,
     })

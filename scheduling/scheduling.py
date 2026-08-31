@@ -57,8 +57,6 @@ class SchedulingService:
     ) -> TreatmentCourse:
         if number_of_appointments != len(planned_appointments):
             raise AppointmentMissmatchError(planned_appointments, number_of_appointments)
-        print(type(course))
-        print(is_dataclass(course))
         with atomic():
             course = replace(course, planned_treatments=number_of_appointments)
             saved_course = self._course_repo.save(course)
