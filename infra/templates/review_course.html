@@ -1,22 +1,43 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Review Course</title>
+</head>
+
+<body>
+
 <form method="post">
     {% csrf_token %}
+
     <h2>Proposed appointments</h2>
-    <ul>
-    {% for appointment in appointments %}
-        <li>
-            Space {{ appointment.window.space_id }}:
-            {{ appointment.window.start }} - {{ appointment.window.end }}
-        
-            {% if appointment.flagged %}
-                <strong>(beyond soft preference)</strong>
-            {% endif %}
-        
-            <input type="text"
-                   name="note_{{ forloop.counter0 }}"
-                   placeholder="note">
-        </li>
-    {% endfor %}
-    </ul>
-    <button type="submit">Confirm booking</button>
-    {% if error %}<p style="color:red">{{ error }}</p>{% endif %}
+
+        <ul>
+            {% for appointment in appointments %}
+                {% include "_proposed_row.html" with index=appointment.index window=appointment.window start=appointment.start end=appointment.end space_name=appointment.space_name difference_days=appointment.difference_days difference_absolute=appointment.difference_absolute %}
+            {% endfor %}
+        </ul>
+
+    <button type="submit">
+        Confirm booking
+    </button>
+
+    {% if error %}
+        <p style="color: red;">
+            {{ error }}
+        </p>
+    {% endif %}
 </form>
+
+<script src="https://unpkg.com/htmx.org@2.0.7"></script>
+
+<script>
+    document.body.addEventListener('htmx:configRequest', (event) => {
+        event.detail.headers['X-CSRFToken'] =
+            '{{ csrf_token }}';
+    });
+</script>
+
+</body>
+</html>

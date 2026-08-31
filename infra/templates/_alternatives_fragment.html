@@ -1,0 +1,74 @@
+{% load static %}
+<link rel="stylesheet" href="{% static 'infra/alternatives.css' %}">
+
+<div id="alternatives-{{ appointment_index }}">
+
+    <div class="week-navigation">
+
+        <button
+            type="button"
+            hx-get="{% url 'appointment_alternatives' appointment_index %}?week_start={{ prev_week|date:'Y-m-d' }}"
+            hx-target="#alternatives-{{ appointment_index }}"
+            hx-swap="outerHTML">
+            « Previous week
+        </button>
+
+        <strong>
+            Week of {{ week_start|date:"d M Y" }}
+        </strong>
+
+        <button
+            type="button"
+            hx-get="{% url 'appointment_alternatives' appointment_index %}?week_start={{ next_week|date:'Y-m-d' }}"
+            hx-target="#alternatives-{{ appointment_index }}"
+            hx-swap="outerHTML">
+            Next week »
+        </button>
+
+    </div>
+
+
+    <div class="week-grid">
+
+        {% for day in days %}
+
+            <div class="day-column">
+
+                <h4>
+                    {{ day.date|date:"D d M" }}
+                </h4>
+
+                {% for w in day.windows %}
+
+                    <button
+                        type="button"
+                        class="slot-button"
+                        hx-post="{% url 'select_window' appointment_index %}"
+                        hx-vals='{
+                            "space_id": "{{ w.space_id }}",
+                            "start": "{{ w.start_time.isoformat }}",
+                            "end": "{{ w.end_time.isoformat }}"
+                        }'
+                        hx-target="#proposed-{{ appointment_index }}"
+                        hx-swap="outerHTML">
+
+                        {{ w.start_time|time:"H:i" }}
+                        –
+                        {{ w.end_time|time:"H:i" }}
+
+                    </button>
+
+                {% empty %}
+
+                    <p>No availability</p>
+
+                {% endfor %}
+
+            </div>
+
+        {% endfor %}
+
+    </div>
+
+</div>
+

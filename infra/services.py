@@ -13,3 +13,4 @@ def build_scheduling_service() -> SchedulingService:
         schedule_repo=DjangoScheduleRepository(),
         space_repo=DjangoSpaceRepository(),
     )
+

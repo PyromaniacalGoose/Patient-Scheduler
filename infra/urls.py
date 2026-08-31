@@ -36,5 +36,6 @@ urlpatterns = [
     path("courses/review/", views.review_course, name="review_course"),
     path("calendar/schedule/", views.schedule_management, name="schedule_management"),
     path("courses/detail/<int:course_id>/", views.course_detail, name="course_detail"),
-
+    path("courses/appointment/<int:appointment_index>/alternatives/", views.appointment_alternatives, name="appointment_alternatives"),
+    path("courses/appointment/<int:appointment_index>/select/", views.select_window, name="select_window",),
 ]

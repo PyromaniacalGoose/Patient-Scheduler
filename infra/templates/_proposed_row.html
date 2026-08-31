@@ -1,0 +1,39 @@
+{% load static %}
+
+<li id="proposed-{{ index }}">
+
+    <strong>
+        {{ start|date:"j M Y" }}
+    </strong>
+
+    {{ start|time:"H:i" }} – {{ end|time:"H:i" }}
+
+    <br>
+
+    Space: {{ space_name }}
+
+    {% if difference_days %}
+        <br>
+
+        {% if difference_days > 0 %}
+            {{ difference_absolute }} day{{ difference_absolute|pluralize }}
+            later than originally proposed
+        {% else %}
+            {{ difference_absolute }} day{{ difference_absolute|pluralize }}
+            earlier than originally proposed
+        {% endif %}
+    {% endif %}
+
+    <br>
+
+    <button
+        type="button"
+        hx-get="{% url 'appointment_alternatives' index %}"
+        hx-target="#alternatives-container-{{ index }}"
+        hx-swap="innerHTML">
+        Change this date
+    </button>
+
+    <div id="alternatives-container-{{ index }}"></div>
+
+</li>
