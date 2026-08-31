@@ -1,0 +1,230 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+
+    <title>Schedule Management</title>
+    <link rel="stylesheet" href="{% static 'infra/schedule.css' %}">
+</head>
+
+<body>
+
+    <h1>Schedule Management</h1>
+    <section>
+        <h2>Weekly Schedule</h2>
+
+        <form method="get">
+            <label for="space_selector">
+                Treatment Space:
+            </label>
+            <select
+                id="space_selector"
+                name="space_id"
+                onchange="this.form.submit()"
+            >
+                {% for space in spaces %}
+                    <option
+                        value="{{ space.id }}"
+                        {% if space.id == selected_space_id %}
+                            selected
+                        {% endif %}
+                    >
+                        {{ space.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </form>
+
+        <form method="post">
+
+            {% csrf_token %}
+
+            <input
+                type="hidden"
+                name="action"
+                value="save_weekly_schedule"
+            >
+
+            <input
+                type="hidden"
+                name="space_id"
+                value="{{ selected_space_id }}"
+            >
+            <table>
+                <thead>
+                    <tr>
+                        <th>Day</th>
+                        <th>Open</th>
+                        <th>Close</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for day in weekday_rows %}
+                        <tr>
+                            <td>
+                                {{ day.name }}
+                            </td>
+                            <td>
+                                <input
+                                    type="time"
+                                    name="open_{{ day.number }}"
+                                    value="{{ day.open_time }}"
+                                >
+                            </td>
+                            <td>
+                                <input
+                                    type="time"
+                                    name="close_{{ day.number }}"
+                                    value="{{ day.close_time }}"
+                                >
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <p class="closed">
+                Leave both times empty to mark a day as closed.
+            </p>
+            <button type="submit">
+                Save Weekly Schedule
+            </button>
+        </form>
+    </section>
+
+
+    <section>
+        <h2>Add Closure</h2>
+        <form method="post">
+            {% csrf_token %}
+            <input
+                type="hidden"
+                name="action"
+                value="create_closure"
+            >
+            <p>
+                <label for="closure_date">
+                    Date:
+                </label>
+                <input
+                    id="closure_date"
+                    type="date"
+                    name="date"
+                    required
+                >
+            </p>
+            <p>
+                <label for="closure_space">
+                    Treatment Space:
+                </label>
+                <select
+                    id="closure_space"
+                    name="space_id"
+                >
+
+                    <option value="">
+                        All spaces
+                    </option>
+                    {% for space in spaces %}
+                        <option value="{{ space.id }}">
+                            {{ space.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </p>
+
+
+            <p>
+                <label for="closure_reason">
+                    Reason:
+                </label>
+                <input
+                    id="closure_reason"
+                    type="text"
+                    name="reason"
+                    maxlength="200"
+                >
+            </p>
+            <button type="submit">
+                Add Closure
+            </button>
+        </form>
+    </section>
+
+    <section>
+        <h2>Add Schedule Override</h2>
+        <form method="post">
+            {% csrf_token %}
+            <input
+                type="hidden"
+                name="action"
+                value="create_override"
+            >
+            <p>
+                <label for="override_date">
+                    Date:
+                </label>
+                <input
+                    id="override_date"
+                    type="date"
+                    name="date"
+                    required
+                >
+            </p>
+            <p>
+                <label for="override_space">
+                    Treatment Space:
+                </label>
+                <select
+                    id="override_space"
+                    name="space_id"
+                >
+                    <option value="">
+                        All spaces
+                    </option>
+                    {% for space in spaces %}
+                        <option value="{{ space.id }}">
+                            {{ space.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </p>
+
+            <p>
+                <label for="override_open">
+                    Opens:
+                </label>
+                <input
+                    id="override_open"
+                    type="time"
+                    name="open_time"
+                    required
+                >
+            </p>
+
+            <p>
+                <label for="override_close">
+                    Closes:
+                </label>
+                <input
+                    id="override_close"
+                    type="time"
+                    name="close_time"
+                    required
+                >
+            </p>
+            <button type="submit">
+                Add Override
+            </button>
+        </form>
+    </section>
+
+    <hr>
+    <a href="{% url 'calendar_page' %}">
+        ← Back to Calendar
+    </a>
+</body>
+
+</html>

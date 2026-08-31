@@ -207,6 +207,38 @@ class DjangoScheduleRepository:
             close_time=orm_obj.close_time,
         )
 
+    #Infra side only
+    def save_rule(self, rule: SpaceSchedule) -> SpaceSchedule:
+        orm_obj, _ = ORMSpaceSchedule.objects.update_or_create(
+            space_id=rule.space_id,
+            weekday=rule.weekday,
+            defaults={
+                "open_time": rule.open_time,
+                "close_time": rule.close_time,
+            },
+        )
+
+        return self._rule_to_domain(orm_obj)
+
+    def save_closure(self, closure: ScheduleClosure) -> ScheduleClosure:
+        orm_obj = ORMScheduleClosure.objects.create(
+            space_id=closure.space_id,
+            date=closure.date,
+            reason=closure.reason,
+        )
+
+        return self._closure_to_domain(orm_obj)
+
+    def save_override(self, override: ScheduleOverride) -> ScheduleOverride:
+        orm_obj = ORMScheduleOverride.objects.create(
+            space_id=override.space_id,
+            date=override.date,
+            open_time=override.open_time,
+            close_time=override.close_time,
+        )
+    
+        return self._overrides_to_domain(orm_obj)
+
 class DjangoSpaceRepository: 
     def get_all(self) -> list[TreatmentSpace]:
         orm_spaces = ORMSpace.objects.all()

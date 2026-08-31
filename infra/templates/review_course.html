@@ -1,0 +1,22 @@
+<form method="post">
+    {% csrf_token %}
+    <h2>Proposed appointments</h2>
+    <ul>
+    {% for appointment in appointments %}
+        <li>
+            Space {{ appointment.window.space_id }}:
+            {{ appointment.window.start }} - {{ appointment.window.end }}
+        
+            {% if appointment.flagged %}
+                <strong>(beyond soft preference)</strong>
+            {% endif %}
+        
+            <input type="text"
+                   name="note_{{ forloop.counter0 }}"
+                   placeholder="note">
+        </li>
+    {% endfor %}
+    </ul>
+    <button type="submit">Confirm booking</button>
+    {% if error %}<p style="color:red">{{ error }}</p>{% endif %}
+</form>

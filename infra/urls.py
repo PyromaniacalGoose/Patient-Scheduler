@@ -32,4 +32,7 @@ urlpatterns = [
     path("calendar/register_patient/", views.register_patient, name="register_patient"),
     path("calendar/patient/<int:patient_id>/", views.patient_detail, name="patient_detail"),
     path("calendar/patients/", views.patient_list, name="patient_list"),
+    path("courses/start/", views.start_course, name="start_course"),
+    path("courses/review/", views.review_course, name="review_course"),
+    path("calendar/schedule/", views.schedule_management, name="schedule_management")
 ]

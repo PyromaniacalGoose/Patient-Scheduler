@@ -11,6 +11,15 @@
     <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.11/locales-all.global.min.js"></script>
 </head>
 <body>
+        <div class="navigation-buttons"> 
+            <a href="/calendar/patients/" class="nav-button">Patients</a> 
+            {% if perms.infra.can_book_appointments %}
+                <a href="/courses/start/" class="nav-button">Start Course</a> 
+                <a href="/calendar/register_patient/" class="nav-button">Register Patient</a> 
+                <a href="/calendar/schedule" class="nav-button">Schedule</a> 
+            {% endif %}
+        </div> 
+
     <div id="calendar" style="max-width: 1000px; margin: 40px auto;"></div>
 
     <script>
