@@ -1,7 +1,5 @@
-from dataclasses import replace
+from dataclasses import is_dataclass, replace
 from datetime import date, datetime, time, timedelta
-
-from django.db import IntegrityError
 
 from .repositories import AppointmentRepository, CourseRepository, SlotRepository, ScheduleRepository, SpaceRepository
 from.models import COPENHAGEN_TZ, TREATMENT_DURATIONS, Appointment, AppointmentMissmatchError, AppointmentStatus, CourseBookingFailedError, CourseStatus, FreeInterval, PlannedAppointment, RescheduleProposal, ScheduleClosure, ScheduleOverride, SlotUnavailableError, SpaceSchedule, TreatmentCourse, TreatmentSlot, TreatmentType, AvailableWindow, TreatmentSpace
@@ -59,7 +57,8 @@ class SchedulingService:
     ) -> TreatmentCourse:
         if number_of_appointments != len(planned_appointments):
             raise AppointmentMissmatchError(planned_appointments, number_of_appointments)
-
+        print(type(course))
+        print(is_dataclass(course))
         with atomic():
             course = replace(course, planned_treatments=number_of_appointments)
             saved_course = self._course_repo.save(course)

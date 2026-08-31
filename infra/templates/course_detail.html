@@ -1,0 +1,30 @@
+<h1>Treatment Course</h1>
+<h2>Patient</h2>
+<p>
+    <strong>Patient:</strong> {{ patient.patient_number }}
+</p>
+<h2>Appointments</h2>
+{% if appointments %}
+    <ul>
+        {% for appointment in appointments %}
+            <li>
+                <strong>
+                    {{ appointment.start_time|date:"j M Y" }}
+                </strong>
+                {{ appointment.start_time|time:"H:i" }}
+                –
+                {{ appointment.end_time|time:"H:i" }}
+
+                <br>
+                Space {{ appointment.space_id }}
+
+                {% if appointment.note %}
+                    <br>
+                    Note: {{ appointment.note }}
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ul>
+{% else %}
+    <p>No appointments found for this course.</p>
+{% endif %}

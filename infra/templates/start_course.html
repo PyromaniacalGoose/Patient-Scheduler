@@ -1,6 +1,6 @@
 <form method="post">
     {% csrf_token %}
-    <label>Patient ID: <input name="patient_id" type="number" required></label><br>
+    <label>Patient number: <input name="patient_number" type="number" required></label><br>
     <label>Number of appointments: <input name="appointment_count" type="number" value="4" required></label><br>
     <label>Min interval (days): <input name="min_interval_days" type="number" value="56" required></label><br>
     <label>preferred max interval (days): <input name="soft_preferred_days" type="number" value="77" required></label><br>

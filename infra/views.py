@@ -3,14 +3,14 @@ from datetime import date, datetime, time
 
 from django.http import Http404, JsonResponse
 from django.utils import timezone
-from infra.django_Repositories import DjangoPatientRepository, DjangoScheduleRepository, DjangoSlotRepository, DjangoAppointmentRepository, DjangoSpaceRepository
+from infra.django_Repositories import DjangoCourseRepository, DjangoPatientRepository, DjangoScheduleRepository, DjangoSlotRepository, DjangoAppointmentRepository, DjangoSpaceRepository
 from django.shortcuts import redirect, render
 from django.contrib.auth.decorators import login_required, permission_required
 
-from infra.models import CourseStatus, ScheduleClosure, ScheduleOverride, SpaceSchedule, TreatmentCourse, TreatmentType
+from infra.models import CourseStatus, ScheduleClosure, ScheduleOverride, SpaceSchedule, TreatmentType
 from infra.services import build_scheduling_service
 from patients.PatientService import PatientService
-from scheduling.models import AvailableWindow, CourseBookingFailedError, PlannedAppointment
+from scheduling.models import AvailableWindow, CourseBookingFailedError, PlannedAppointment, TreatmentCourse
 from scheduling.scheduling import compute_free_intervals
 
 
@@ -160,10 +160,16 @@ def patient_list(request):
 def start_course(request):
     if request.method == "POST":
         service = build_scheduling_service()  # factory, see below
+        patient_repo = DjangoPatientRepository()
         space_ids = [s.id for s in DjangoSpaceRepository().get_all()]
+        patient_number = int(request.POST["patient_number"])
+        patient = patient_repo.get_by_number(patient_number)
+        if patient is None:
+            return (request, "start_course.html", {"error": f"Patient: {patient_number} not found."})
+
 
         result = service.start_course(
-            patient_id=int(request.POST["patient_id"]),
+            patient_id = patient.id,
             appointment_count=int(request.POST["appointment_count"]),
             min_interval_days=int(request.POST["min_interval_days"]),
             soft_preferred_days=int(request.POST["soft_preferred_days"]),
@@ -261,11 +267,6 @@ def schedule_management(request):
     selected_space_id = int(
         request.GET.get("space_id", spaces[0].id)
     )
-
-    # ==========================================
-    # HANDLE FORM SUBMISSION
-    # ==========================================
-
     if request.method == "POST":
 
         action = request.POST.get("action")
@@ -405,3 +406,24 @@ def schedule_management(request):
             "current_time": timezone.localtime(),
         },
     )
+
+@login_required
+def course_detail(request, course_id):
+    course_repo = DjangoCourseRepository()
+    appointment_repo = DjangoAppointmentRepository()
+    patient_repo = DjangoPatientRepository()
+
+    course = course_repo.get_by_id(course_id)
+    if course is None:
+        raise Http404
+
+    patient = patient_repo.get_by_id(course.patient_id)
+    if patient is None:
+            raise Http404
+
+    appointments = appointment_repo.get_planned_course_appointments(course_id)
+
+    return render(request, "course_detail.html", {
+        "patient": patient,
+        "appointments": appointments,
+    })
