@@ -127,6 +127,10 @@ class DjangoCourseRepository:
             return None
         return self._to_domain(orm_obj)
 
+    def get_by_ids(self, course_ids: list[int]) -> list[TreatmentCourse]:
+        orm_courses = ORMCourse.objects.filter(id__in=course_ids)
+        return [self._to_domain(a) for a in orm_courses]
+
     #TODO Make sure this either can't return multiple values, or handle a scenario where it does.
     def get_active_course_by_patient_id(self, patient_id: int) -> TreatmentCourse | None: 
         try:
@@ -273,6 +277,10 @@ class DjangoPatientRepository:
             return None
         return self._to_domain(orm_obj)
 
+    def get_by_ids(self, patient_ids: list[int]) -> list[PatientDetail]:
+        orm_patients = ORMPatient.objects.filter(id__in=patient_ids, is_active=True)
+        return [self._to_domain(p) for p in orm_patients]
+
     def get_by_number(self, number: int) -> PatientDetail | None:
         try:
             orm_obj = ORMPatient.objects.get(patient_number=number, is_active=True)
@@ -284,7 +292,7 @@ class DjangoPatientRepository:
         orm_patients = ORMPatient.objects.filter(
             is_active=True,
         )
-        return [self._to_domain(a) for a in orm_patients]
+        return [self._to_domain(p) for p in orm_patients]
 
 
     def reactivate(self, patient_id: int) -> PatientDetail:

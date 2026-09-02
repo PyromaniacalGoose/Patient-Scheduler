@@ -1,6 +1,7 @@
 # infra/views.py
 from datetime import date, datetime, time, timedelta
 from collections import defaultdict
+import hashlib
 
 from django.http import Http404, HttpResponseBadRequest, JsonResponse
 from django.utils import timezone
@@ -25,6 +26,16 @@ WEEKDAYS = [
     (6, "Sunday"),
 ]
 
+# Give each patient's appoinment a unique and consistant color
+def patient_color(patient_number: str) -> str:
+    digest = hashlib.sha256(
+        str(patient_number).encode()
+    ).hexdigest()
+
+    hue = int(digest[:8], 16) % 360
+
+    return f"hsl({hue}, 65%, 55%)"
+
 @login_required
 def calendar_page(request):
     return render(request, "calendar.html")
@@ -34,28 +45,65 @@ def calendar_events(request):
     space_repo = DjangoSpaceRepository()
     slot_repo = DjangoSlotRepository()
     appointment_repo = DjangoAppointmentRepository()
+    course_repo = DjangoCourseRepository()
+    patient_repo = DjangoPatientRepository()
 
     start = datetime.fromisoformat(request.GET.get("start"))
     end = datetime.fromisoformat(request.GET.get("end"))
 
     events = []
     spaces = space_repo.get_all()
-    for space in spaces:
-        slots = slot_repo.get_booked_in_range(space.id, start, end)
-        if not slots:
-            continue
-        appointments = {a.slot_id: a for a in appointment_repo.get_by_slot_ids([s.id for s in slots])}
 
-        for slot in slots:
-            appt = appointments.get(slot.id)
-            title = f"{space.name}: Treatment #{appt.treatment_number}" if appt else f"{space.name}: Blocked"
-            events.append({
-                "id": slot.id,
-                "start": slot.start_time.isoformat(),
-                "end": slot.end_time.isoformat(),
-                "title": title,
-                "color": "#3788d8" if appt else "#888888",
-            })
+    slots = []
+    
+    for space in spaces:
+        slots.extend(
+            slot_repo.get_booked_in_range(
+                space.id,
+                start,
+                end,
+            )
+        )
+    
+    appointments = appointment_repo.get_by_slot_ids(
+        [slot.id for slot in slots]
+    )
+    
+    courses = course_repo.get_by_ids(
+        list({appointment.course_id for appointment in appointments})
+    )
+    
+    patients = patient_repo.get_by_ids(
+        list({course.patient_id for course in courses})
+    )
+    # Dicts
+    appointments_by_slot = {
+        appointment.slot_id: appointment
+        for appointment in appointments
+    }
+
+    courses_by_id = {
+        course.id: course
+        for course in courses
+    }
+
+    patients_by_id = {
+        patient.id: patient
+        for patient in patients
+    }
+        
+    for slot in slots:
+        appt = appointments_by_slot.get(slot.id)
+        course = courses_by_id.get(appt.course_id)
+        patient = patients_by_id.get(course.patient_id)
+        title = f"{patient.first_name} {patient.last_name}: ({patient.patient_number}) in {space.name}: Treatment #{appt.treatment_number}" if appt and patient else f"{space.name}: Blocked"
+        events.append({
+            "id": slot.id,
+            "start": slot.start_time.isoformat(),
+            "end": slot.end_time.isoformat(),
+            "title": title,
+            "color": patient_color(patient.patient_number) if patient else "#888888",
+        })
 
     return JsonResponse(events, safe=False)
 
@@ -409,10 +457,7 @@ def appointment_alternatives(request, appointment_index):
     )
 
 @login_required
-@permission_required(
-    "infra.can_book_appointments",
-    raise_exception=True,
-)
+@permission_required( "infra.can_book_appointments", raise_exception=True)
 def select_window(request, appointment_index):
     pending = request.session.get("pending_course")
 
