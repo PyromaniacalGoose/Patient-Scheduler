@@ -9,10 +9,9 @@ from infra.django_Repositories import DjangoCourseRepository, DjangoPatientRepos
 from django.shortcuts import redirect, render
 from django.contrib.auth.decorators import login_required, permission_required
 
-from infra.models import CourseStatus, ScheduleClosure, ScheduleOverride, SpaceSchedule, TreatmentType
 from infra.services import build_scheduling_service
 from patients.PatientService import PatientService
-from scheduling.models import COPENHAGEN_TZ, TREATMENT_DURATIONS, AvailableWindow, CourseBookingFailedError, PlannedAppointment, TreatmentCourse
+from scheduling.models import COPENHAGEN_TZ, TREATMENT_DURATIONS, AvailableWindow, CourseBookingFailedError, CourseStatus, PlannedAppointment, ScheduleClosure, ScheduleOverride, SpaceSchedule, TreatmentCourse, TreatmentType
 from scheduling.scheduling import compute_free_intervals, find_windows_for_duration
 
 
@@ -26,7 +25,7 @@ WEEKDAYS = [
     (6, "Sunday"),
 ]
 
-# Give each patient's appoinment a unique and consistant color
+# Helper method to give each patient a unique and consistant appointment color
 def patient_color(patient_number: str) -> str:
     digest = hashlib.sha256(
         str(patient_number).encode()
@@ -91,10 +90,16 @@ def calendar_events(request):
         patient.id: patient
         for patient in patients
     }
+
+    spaces_by_id = {
+        s.id: s 
+        for s in spaces
+    }
         
     for slot in slots:
         appt = appointments_by_slot.get(slot.id)
         course = courses_by_id.get(appt.course_id)
+        space = spaces_by_id.get(slot.space_id)
         patient = patients_by_id.get(course.patient_id)
         title = f"{patient.first_name} {patient.last_name}: ({patient.patient_number}) in {space.name}: Treatment #{appt.treatment_number}" if appt and patient else f"{space.name}: Blocked"
         events.append({
@@ -191,7 +196,7 @@ def start_course(request):
         patient_number = int(request.POST["patient_number"])
         patient = patient_repo.get_by_number(patient_number)
         if patient is None:
-            return (request, "start_course.html", {"error": f"Patient: {patient_number} not found."})
+            return render(request, "start_course.html", {"error": f"Patient: {patient_number} not found."})
 
 
         result = service.start_course(
@@ -266,9 +271,7 @@ def review_course(request):
             id=None,
             patient_id=pending["patient_id"],
             planned_treatments=len(planned),
-            status=CourseStatus(
-                pending["status"]
-            ),
+            status=CourseStatus.PLANNED,
         )
 
         try:
