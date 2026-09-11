@@ -1,34 +1,16 @@
 <li id="proposed-{{ context_id }}">
-
     <strong>{{ start|date:"j M Y" }}</strong>
     {{ start|time:"H:i" }} – {{ end|time:"H:i" }}
-
     <br>
-
     Space: {{ space_name }}
-
-    {% if difference_days %}
-        <br>
-
-        {% if difference_days > 0 %}
-            {{ difference_absolute }} day{{ difference_absolute|pluralize }}
-            later than originally proposed
-        {% else %}
-            {{ difference_absolute }} day{{ difference_absolute|pluralize }}
-            earlier than originally proposed
-        {% endif %}
-    {% endif %}
-
     <br>
-
-    <button
-        type="button"
+    <em>Moved from {{ old_start|date:"j M Y H:i" }}</em>
+    <br>
+    <button type="button"
         hx-get="{{ alternatives_base_url }}"
         hx-target="#alternatives-container-{{ context_id }}"
         hx-swap="innerHTML">
         Change this date
     </button>
-
     <div id="alternatives-container-{{ context_id }}"></div>
-
 </li>

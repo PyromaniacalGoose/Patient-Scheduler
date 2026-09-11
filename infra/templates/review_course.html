@@ -15,7 +15,7 @@
 
         <ul>
             {% for appointment in appointments %}
-                {% include "_proposed_row.html" with index=appointment.index window=appointment.window start=appointment.start end=appointment.end space_name=appointment.space_name difference_days=appointment.difference_days difference_absolute=appointment.difference_absolute %}
+                {% include "_proposed_row.html" with context_id=appointment.index start=appointment.start end=appointment.end space_name=appointment.space_name difference_days=appointment.difference_days difference_absolute=appointment.difference_absolute alternatives_base_url=appointment.alternatives_base_url %}
             {% endfor %}
         </ul>
 

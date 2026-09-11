@@ -8,6 +8,7 @@ from django.utils import timezone
 from infra.django_Repositories import DjangoCourseRepository, DjangoPatientRepository, DjangoScheduleRepository, DjangoSlotRepository, DjangoAppointmentRepository, DjangoSpaceRepository
 from django.shortcuts import redirect, render
 from django.contrib.auth.decorators import login_required, permission_required
+from django.urls import reverse
 
 from infra.services import build_scheduling_service
 from patients.PatientService import PatientService
@@ -301,6 +302,11 @@ def review_course(request):
             course_id=saved_course.id,
         )
     appointments = build_review_appointments(pending)
+    for appointment in appointments:
+        appointment["alternatives_base_url"] = reverse(
+            "appointment_alternatives",
+            kwargs={"appointment_index": appointment["index"]},
+        )
 
     return render(
         request,
@@ -328,7 +334,7 @@ def build_review_appointments(pending):
         ).days
 
         space = space_repo.get_by_id(window["space_id"])
-
+        
         appointments.append({
             "index": i,
             "window": window,
@@ -344,120 +350,82 @@ def build_review_appointments(pending):
 
 @login_required
 @permission_required("infra.can_book_appointments", raise_exception=True)
-def appointment_alternatives(request, appointment_index):
-    pending = request.session.get("pending_course")
-
-    if pending is None:
-        return redirect("start_course")
-
-    if (
-        appointment_index < 0
-        or appointment_index >= len(pending["windows"])
-    ):
-        return HttpResponseBadRequest(
-            "Invalid appointment index."
-        )
+def appointment_alternatives(request, appointment_index=None, appointment_id=None):
+    if appointment_id is not None:
+        # single-appointment reschedule context
+        appointment_repo = DjangoAppointmentRepository()
+        slot_repo = DjangoSlotRepository()
+        appt = appointment_repo.get_by_id(appointment_id)
+        if appt is None:
+            raise Http404
+        current_slot = slot_repo.get_by_id(appt.slot_id)
+        default_date_source = current_slot.start_time.date()
+        treatment_type = appt.type
+        context_id = appointment_id
+        alternatives_base_url = reverse("reschedule_alternatives", kwargs={"appointment_id": appointment_id})
+        select_url = reverse("select_reschedule_window", kwargs={"appointment_id": appointment_id}) 
+    else:
+        # course-review context (existing behavior)
+        pending = request.session.get("pending_course")
+        if pending is None:
+            return redirect("start_course")
+        if appointment_index < 0 or appointment_index >= len(pending["windows"]):
+            return HttpResponseBadRequest("Invalid appointment index.")
+        proposed = pending["windows"][appointment_index]
+        default_date_source = datetime.fromisoformat(proposed["start"]).date()
+        treatment_type = TreatmentType(pending["treatment_type"])
+        context_id = appointment_index
+        alternatives_base_url = reverse("appointment_alternatives", kwargs={"appointment_index": appointment_index})
+        select_url = reverse("select_window", kwargs={"appointment_index": appointment_index})
 
     week_start_str = request.GET.get("week_start")
-
     if week_start_str:
         week_start = date.fromisoformat(week_start_str)
     else:
-        proposed = pending["windows"][appointment_index]
-        week_start = datetime.fromisoformat(
-            proposed["start"]
-        ).date()
-        week_start -= timedelta(
-            days=week_start.weekday()
-        )
+        week_start = default_date_source - timedelta(days=default_date_source.weekday())
     week_end = week_start + timedelta(days=7)
 
     schedule_repo = DjangoScheduleRepository()
     slot_repo = DjangoSlotRepository()
     space_repo = DjangoSpaceRepository()
 
-    space_ids = [
-        s.id for s in space_repo.get_all()
-    ]
+    space_ids = [s.id for s in space_repo.get_all()]
     rules = []
-    for space_id in space_ids:
-        rules.extend(
-            schedule_repo.get_rules_for_space(space_id)
-        )
-    tz_start = datetime.combine(
-        week_start,
-        time.min,
-        tzinfo=COPENHAGEN_TZ,
-    )
-    tz_end = datetime.combine(
-        week_end,
-        time.min,
-        tzinfo=COPENHAGEN_TZ,
-    )
-    overrides = schedule_repo.get_schedule_overrides(
-        week_start,
-        week_end,
-    )
-    closures = schedule_repo.get_closures(
-        week_start,
-        week_end,
-    )
+
+    for sp_id in space_ids:
+        rules.extend(schedule_repo.get_rules_for_space(sp_id))
+
+    tz_start = datetime.combine(week_start, time.min, tzinfo=COPENHAGEN_TZ)
+    tz_end = datetime.combine(week_end, time.min, tzinfo=COPENHAGEN_TZ)
+    overrides = schedule_repo.get_schedule_overrides(week_start, week_end)
+    closures = schedule_repo.get_closures(week_start, week_end)
     booked = []
-    for space_id in space_ids:
-        booked.extend(
-            slot_repo.get_booked_in_range(
-                space_id,
-                tz_start,
-                tz_end,
-            )
-        )
-    duration = TREATMENT_DURATIONS[
-        TreatmentType(pending["treatment_type"])
-    ]
-    free = compute_free_intervals(
-        rules,
-        overrides,
-        closures,
-        booked,
-        tz_start,
-        tz_end,
-        space_ids,
-    )
+
+    for sp_id in space_ids:
+        booked.extend(slot_repo.get_booked_in_range(sp_id, tz_start, tz_end))
+
+    duration = TREATMENT_DURATIONS[treatment_type]
+    free = compute_free_intervals(rules, overrides, closures, booked, tz_start, tz_end, space_ids)
     windows = find_windows_for_duration(free, duration)
+
     windows_by_day = {}
-
     for w in windows:
-        day = w.start_time.date()
+        windows_by_day.setdefault(w.start_time.date(), []).append(w)
 
-        if day not in windows_by_day:
-            windows_by_day[day] = []
+    days = [
+        {"date": week_start + timedelta(days=offset), "windows": windows_by_day.get(week_start + timedelta(days=offset), [])}
+        for offset in range(7)
+    ]
 
-        windows_by_day[day].append(w)
-
-
-    days = []
-
-    for offset in range(7):
-        day = week_start + timedelta(days=offset)
-
-        day_windows = windows_by_day.get(day, [])
-
-        days.append({
-            "date": day,
-            "windows": day_windows,
-        })
-
-    return render(
-        request,
-        "_alternatives_fragment.html",
-        {
-            "days": days,
-            "appointment_index": appointment_index,
-            "week_start": week_start,
-            "prev_week": week_start - timedelta(days=7),
-            "next_week": week_start + timedelta(days=7),
-        },
-    )
+    return render(request, "_alternatives_fragment.html", {
+        "days": days,
+        "context_id": context_id,
+        "alternatives_base_url": alternatives_base_url,
+        "select_url": select_url,
+        "week_start": week_start,
+        "prev_week": week_start - timedelta(days=7),
+        "next_week": week_start + timedelta(days=7),
+    })
 
 @login_required
 @permission_required( "infra.can_book_appointments", raise_exception=True)
@@ -485,13 +453,15 @@ def select_window(request, appointment_index):
         request,
         "_proposed_row.html",
         {
-            "index": appointment["index"],
+            "context_id": appointment["index"],
             "window": appointment["window"],
             "start": appointment["start"],
             "end": appointment["end"],
             "space_name": appointment["space_name"],
             "difference_days": appointment["difference_days"],
             "difference_absolute": appointment["difference_absolute"],
+            "alternatives_base_url": reverse("appointment_alternatives", kwargs={"appointment_index": appointment_index}),
+            "select_url": reverse("select_window",kwargs={"appointment_index": appointment_index}),
         },
     )
 
