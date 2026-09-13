@@ -67,7 +67,13 @@
                                 .catch(failureCallback);
                         }
                     }
-                ]
+                ],
+                eventClick: function (info) {
+                    const appointmentId = info.event.extendedProps.appointment_id;
+                    if (appointmentId) {
+                        window.location.href = `/appointments/${appointmentId}/`;
+                    }
+                },
             });
             calendar.render();
         });

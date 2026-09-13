@@ -12,7 +12,7 @@ from django.urls import reverse
 
 from infra.services import build_scheduling_service
 from patients.PatientService import PatientService
-from scheduling.models import COPENHAGEN_TZ, TREATMENT_DURATIONS, AvailableWindow, CourseBookingFailedError, CourseStatus, PlannedAppointment, ScheduleClosure, ScheduleOverride, SpaceSchedule, TreatmentCourse, TreatmentType
+from scheduling.models import COPENHAGEN_TZ, TREATMENT_DURATIONS, AvailableWindow, CourseBookingFailedError, CourseStatus, PlannedAppointment, ScheduleClosure, ScheduleOverride, SlotUnavailableError, SpaceSchedule, TreatmentCourse, TreatmentType
 from scheduling.scheduling import compute_free_intervals, find_windows_for_duration
 
 
@@ -109,6 +109,9 @@ def calendar_events(request):
             "end": slot.end_time.isoformat(),
             "title": title,
             "color": patient_color(patient.patient_number) if patient else "#888888",
+            "extendedProps": {
+                "appointment_id": appt.id if appt else None,
+            },
         })
 
     return JsonResponse(events, safe=False)
@@ -145,6 +148,26 @@ def calendar_availability(request):
         for fi in free_intervals
     ]
     return JsonResponse(events, safe=False)
+
+@login_required
+def appointment_detail_page(request, appointment_id):
+    appointment_repo = DjangoAppointmentRepository()
+    slot_repo = DjangoSlotRepository()
+    space_repo = DjangoSpaceRepository()
+    course_repo = DjangoCourseRepository()
+    patient_repo = DjangoPatientRepository()
+
+    appt = appointment_repo.get_by_id(appointment_id)
+    if appt is None:
+        raise Http404
+    slot = slot_repo.get_by_id(appt.slot_id)
+    space = space_repo.get_by_id(slot.space_id)
+    course = course_repo.get_by_id(appt.course_id)
+    patient = patient_repo.get_by_id(course.patient_id)
+
+    return render(request, "appointment_detail.html", {
+        "appointment": appt, "slot": slot, "space": space, "course": course, "patient": patient,
+    })
 
 
 @login_required
@@ -467,6 +490,55 @@ def select_window(request, appointment_index):
 
 @login_required
 @permission_required("infra.can_book_appointments", raise_exception=True)
+def select_reschedule_window(request, appointment_id):
+    service = build_scheduling_service()
+    slot_repo = DjangoSlotRepository()
+    space_repo = DjangoSpaceRepository()
+    appointment_repo = DjangoAppointmentRepository()
+
+    appt = appointment_repo.get_by_id(appointment_id)
+    if appt is None:
+        raise Http404
+
+    old_slot = slot_repo.get_by_id(appt.slot_id)  # fetch BEFORE rescheduling — it gets unbooked inside
+
+    new_window = AvailableWindow(
+        space_id=int(request.POST["space_id"]),
+        start_time=datetime.fromisoformat(request.POST["start"]),
+        end_time=datetime.fromisoformat(request.POST["end"]),
+    )
+
+    try:
+        updated = service.reschedule_single_appointment(appointment_id, new_window)
+    except SlotUnavailableError:
+        return HttpResponseBadRequest("That slot is no longer available.")
+
+    new_slot = slot_repo.get_by_id(updated.slot_id)
+    space = space_repo.get_by_id(new_slot.space_id)
+
+    return render(request, "_rescheduled_row.html", {
+        "context_id": appointment_id,
+        "start": new_slot.start_time,
+        "end": new_slot.end_time,
+        "space_name": space.name,
+        "old_start": old_slot.start_time,
+        "alternatives_base_url": reverse("reschedule_alternatives", kwargs={"appointment_id": appointment_id}),
+    })
+
+@login_required
+@permission_required("infra.can_book_appointments", raise_exception=True)
+def reschedule_appointment_page(request, appointment_id):
+    appointment_repo = DjangoAppointmentRepository()
+    appt = appointment_repo.get_by_id(appointment_id)
+    if appt is None:
+        raise Http404
+    return render(request, "reschedule_appointment.html", {
+        "appointment_id": appointment_id,
+        "alternatives_base_url": reverse("reschedule_alternatives", kwargs={"appointment_id": appointment_id}),
+    })
+
+@login_required
+@permission_required("infra.can_book_appointments", raise_exception=True)
 def schedule_management(request):
 
     schedule_repo = DjangoScheduleRepository()
@@ -529,6 +601,7 @@ def schedule_management(request):
                 f"/calendar/schedule/?space_id={selected_space_id}"
             )
 
+        
         # ------------------------------------------
         # CREATE CLOSURE
         # ------------------------------------------

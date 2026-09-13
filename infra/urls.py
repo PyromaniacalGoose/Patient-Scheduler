@@ -38,4 +38,10 @@ urlpatterns = [
     path("courses/detail/<int:course_id>/", views.course_detail, name="course_detail"),
     path("courses/appointment/<int:appointment_index>/alternatives/", views.appointment_alternatives, name="appointment_alternatives"),
     path("courses/appointment/<int:appointment_index>/select/", views.select_window, name="select_window",),
+    path("appointments/<int:appointment_id>/alternatives/", views.appointment_alternatives, name="reschedule_alternatives"),
+    path("appointments/<int:appointment_id>/reschedule/confirm/", views.select_reschedule_window, name="select_reschedule_window"),
+    path("appointments/<int:appointment_id>/", views.appointment_detail_page, name="appointment_detail_page"),
+    path("appointments/<int:appointment_id>/reschedule/", views.reschedule_appointment_page, name="reschedule_appointment_page"),
+    #path("appointments/<int:appointment_id>/cascade/", views.start_cascade_view, name="reschedule_appointment_cascade"),
+    #path("appointments/<int:appointment_id>/cancel/", views.cancel_appointment_page, name="cancel_appointment_page"),
 ]

@@ -273,20 +273,28 @@ class SchedulingService:
         appointment_id: int,
         new_window: AvailableWindow,
     ) -> Appointment:
+        appt = self._appointment_repo.get_by_id(appointment_id)
+        if appt is None:
+            raise ValueError("Must give a real appointment id to reschedule")
+    
+        old_slot_id = appt.slot_id
+    
         with atomic():
-            old_appointment = self._appointment_repo.get_by_id(appointment_id)
-
-            if old_appointment is None:
-                raise ValueError(f"Could not find appointment with id: {appointment_id}")
-
-            new_appointment = PlannedAppointment(
-                new_window,
-                old_appointment.type,
-                old_appointment.note,
-            )
-            self._appointment_repo.cancel(appointment_id) 
-            self._slot_repo.unbook(old_appointment.old_slot_id)
-            self.book_appointment(old_appointment.course_id, new_appointment, old_appointment.treatment_number)
+            overlapping = self._slot_repo.get_booked_in_range(new_window.space_id, new_window.start_time, new_window.end_time)
+            if overlapping:
+                raise SlotUnavailableError(new_window.space_id, new_window.start_time)
+    
+            new_slot = self._slot_repo.save(TreatmentSlot(
+                id=None, space_id=new_window.space_id,
+                start_time=new_window.start_time, end_time=new_window.end_time,
+            ))
+    
+            updated = replace(appt, slot_id=new_slot.id)
+            saved = self._appointment_repo.save(updated)   
+    
+            self._slot_repo.unbook(old_slot_id)         
+    
+            return saved
 
 
 

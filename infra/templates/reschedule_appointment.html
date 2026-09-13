@@ -1,0 +1,23 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Reschedule appointment</title>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <link rel="stylesheet" href="{% static 'infra/alternatives.css' %}">
+
+</head>
+<body hx-headers='{"x-csrftoken": "{{ csrf_token }}"}'>
+    {% block content %}
+    <h2>Choose a new time for this appointment</h2>
+    <div id="proposed-{{ appointment_id }}">
+        <p>Current: {{ current_start|date:"j M Y H:i" }} in {{ current_space_name }}</p>
+    </div>
+    <div id="alternatives-container-{{ appointment_id }}"
+         hx-get="{{ alternatives_base_url }}"
+         hx-trigger="load"
+         hx-swap="innerHTML"></div>
+    {% endblock %}
+</body>
+</html>
