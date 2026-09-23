@@ -42,6 +42,8 @@ urlpatterns = [
     path("appointments/<int:appointment_id>/reschedule/confirm/", views.select_reschedule_window, name="select_reschedule_window"),
     path("appointments/<int:appointment_id>/", views.appointment_detail_page, name="appointment_detail_page"),
     path("appointments/<int:appointment_id>/reschedule/", views.reschedule_appointment_page, name="reschedule_appointment_page"),
-    #path("appointments/<int:appointment_id>/cascade/", views.start_cascade_view, name="reschedule_appointment_cascade"),
-    #path("appointments/<int:appointment_id>/cancel/", views.cancel_appointment_page, name="cancel_appointment_page"),
+    path("appointments/<int:appointment_id>/cascade/", views.start_cascade, name="start_cascade"),
+    path("cascade/review/", views.review_cascade, name="review_cascade"),
+    path("cascade/<int:cascade_index>/alternatives/", views.appointment_alternatives, name="cascade_alternatives"),
+    path("cascade/<int:cascade_index>/select/", views.select_cascade_window, name="select_cascade_window"),
 ]

@@ -1,0 +1,15 @@
+<li id="proposed-{{ context_id }}">
+    <strong>Treatment #{{ treatment_number }}</strong>
+    {{ start|date:"j M Y" }} {{ start|time:"H:i" }} – {{ end|time:"H:i" }}
+    <br>
+    Space: {{ space_name }}
+    {% if flagged %}<br><strong>(beyond soft preference)</strong>{% endif %}
+    <br>
+    <button type="button"
+        hx-get="{{ alternatives_base_url }}"
+        hx-target="#alternatives-container-{{ context_id }}"
+        hx-swap="innerHTML">
+        Change this date
+    </button>
+    <div id="alternatives-container-{{ context_id }}"></div>
+</li>

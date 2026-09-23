@@ -45,7 +45,6 @@
                                             fetch(`/calendar/events/?${params}`)
                                                 .then(r => r.json())
                                                 .then(data => {
-                                                    console.log("BOOKED EVENTS:", data);
                                                     successCallback(data);
                                                 })
                                                 .catch(failureCallback);
@@ -61,13 +60,18 @@
                             fetch(`/calendar/availability/?${params}`)
                                 .then(r => r.json())
                                 .then(data => {
-                                    console.log("AVAILABILITY:", data);
                                     successCallback(data);
                                 })
                                 .catch(failureCallback);
                         }
                     }
                 ],
+                eventClassNames: function (info) {
+                    if (info.event.extendedProps.appointment_id) {
+                        return ['appointment-event'];
+                    }
+                    return [];
+                },
                 eventClick: function (info) {
                     const appointmentId = info.event.extendedProps.appointment_id;
                     if (appointmentId) {

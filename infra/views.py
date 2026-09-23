@@ -12,7 +12,7 @@ from django.urls import reverse
 
 from infra.services import build_scheduling_service
 from patients.PatientService import PatientService
-from scheduling.models import COPENHAGEN_TZ, TREATMENT_DURATIONS, AvailableWindow, CourseBookingFailedError, CourseStatus, PlannedAppointment, ScheduleClosure, ScheduleOverride, SlotUnavailableError, SpaceSchedule, TreatmentCourse, TreatmentType
+from scheduling.models import COPENHAGEN_TZ, TREATMENT_DURATIONS, AvailableWindow, CourseBookingFailedError, CourseStatus, PlannedAppointment, RescheduleProposal, ScheduleClosure, ScheduleOverride, SlotUnavailableError, SpaceSchedule, TreatmentCourse, TreatmentType
 from scheduling.scheduling import compute_free_intervals, find_windows_for_duration
 
 
@@ -373,8 +373,20 @@ def build_review_appointments(pending):
 
 @login_required
 @permission_required("infra.can_book_appointments", raise_exception=True)
-def appointment_alternatives(request, appointment_index=None, appointment_id=None):
-    if appointment_id is not None:
+def appointment_alternatives(request, appointment_index=None, appointment_id=None, cascade_index=None):
+    if cascade_index is not None:
+        pending = request.session.get("pending_cascade")
+        if pending is None:
+            return redirect("calendar_page")
+        if cascade_index < 0 or cascade_index >= len(pending):
+            return HttpResponseBadRequest("Invalid cascade index.")
+        proposed = pending[cascade_index]
+        default_date_source = datetime.fromisoformat(proposed["start"]).date()
+        treatment_type = TreatmentType(proposed["treatment_type"])
+        context_id = cascade_index
+        alternatives_base_url = reverse("cascade_alternatives", kwargs={"cascade_index": cascade_index})
+        select_url = reverse("select_cascade_window", kwargs={"cascade_index": cascade_index})
+    elif appointment_id is not None:
         # single-appointment reschedule context
         appointment_repo = DjangoAppointmentRepository()
         slot_repo = DjangoSlotRepository()
@@ -564,9 +576,7 @@ def schedule_management(request):
 
         action = request.POST.get("action")
 
-        # ------------------------------------------
         # SAVE ENTIRE WEEKLY SCHEDULE
-        # ------------------------------------------
 
         if action == "save_weekly_schedule":
 
@@ -602,9 +612,7 @@ def schedule_management(request):
             )
 
         
-        # ------------------------------------------
         # CREATE CLOSURE
-        # ------------------------------------------
 
         elif action == "create_closure":
 
@@ -626,9 +634,7 @@ def schedule_management(request):
 
             return redirect("schedule_management")
 
-        # ------------------------------------------
         # CREATE OVERRIDE
-        # ------------------------------------------
 
         elif action == "create_override":
 
@@ -655,9 +661,7 @@ def schedule_management(request):
 
             return redirect("schedule_management")
 
-    # ==========================================
     # GET EXISTING RULES FOR SELECTED SPACE
-    # ==========================================
 
     existing_rules = {
         rule.weekday: rule
@@ -741,3 +745,117 @@ def course_detail(request, course_id):
         "patient": patient,
         "appointments": appointment_details,
     })
+
+
+@login_required
+@permission_required("infra.can_book_appointments", raise_exception=True)
+def start_cascade(request, appointment_id):
+    service = build_scheduling_service()
+
+    result = service.cascade_reschedule(
+        appointment_id=appointment_id,
+        min_interval_days=56,
+        soft_preferred_days=77,
+    )
+
+    if result is None:
+        return render(request, "cascade_review.html", {"error": "No feasible reschedule found.", "rows": []})
+
+    proposals, flagged = result
+
+    request.session["pending_cascade"] = [
+        {
+            "existing_appointment_id": p.existing_appointment_id,
+            "course_id": p.course_id,
+            "treatment_number": p.treatment_number,
+            "space_id": p.planned.window.space_id,
+            "start": p.planned.window.start_time.isoformat(),
+            "end": p.planned.window.end_time.isoformat(),
+            "treatment_type": int(p.planned.treatment_type),
+            "note": p.planned.note,
+        }
+        for p in proposals
+    ]
+    request.session["pending_cascade_flagged"] = flagged
+
+    return redirect("review_cascade")
+
+@login_required
+@permission_required("infra.can_book_appointments", raise_exception=True)
+def review_cascade(request):
+    pending = request.session.get("pending_cascade")
+    if pending is None:
+        return redirect("calendar_page")
+
+    if request.method == "POST":
+        service = build_scheduling_service()
+        proposals = [
+            RescheduleProposal(
+                existing_appointment_id=p["existing_appointment_id"],
+                course_id=p["course_id"],
+                treatment_number=p["treatment_number"],
+                planned=PlannedAppointment(
+                    window=AvailableWindow(
+                        space_id=p["space_id"],
+                        start_time=datetime.fromisoformat(p["start"]),
+                        end_time=datetime.fromisoformat(p["end"]),
+                    ),
+                    treatment_type=TreatmentType(p["treatment_type"]),
+                    note=p["note"],
+                ),
+            )
+            for p in pending
+        ]
+
+        try:
+            course = service.book_cascade(proposals)
+        except CourseBookingFailedError as e:
+            return render(request, "cascade_review.html", {
+                "rows": build_cascade_rows(pending, request.session["pending_cascade_flagged"]),
+                "error": f"Slot no longer available for appointment #{e.failed_at_appointment}, please re-plan.",
+            })
+
+        del request.session["pending_cascade"]
+        del request.session["pending_cascade_flagged"]
+        return redirect("course_detail", course_id=course.id)
+
+    rows = build_cascade_rows(pending, request.session.get("pending_cascade_flagged", []))
+    return render(request, "cascade_review.html", {"rows": rows})
+
+
+def build_cascade_rows(pending, flagged):
+    space_repo = DjangoSpaceRepository()
+    rows = []
+    for i, p in enumerate(pending):
+        space = space_repo.get_by_id(p["space_id"])
+        rows.append({
+            "context_id": i,
+            "existing_appointment_id": p["existing_appointment_id"],
+            "treatment_number": p["treatment_number"],
+            "start": datetime.fromisoformat(p["start"]),
+            "end": datetime.fromisoformat(p["end"]),
+            "space_name": space.name,
+            "flagged": flagged[i] if i < len(flagged) else False,
+            "alternatives_base_url": reverse("cascade_alternatives", kwargs={"cascade_index": i}),
+        })
+    return rows
+
+@login_required
+@permission_required("infra.can_book_appointments", raise_exception=True)
+def select_cascade_window(request, cascade_index):
+    pending = request.session.get("pending_cascade")
+    if pending is None:
+        return redirect("calendar_page")
+
+    pending[cascade_index]["space_id"] = int(request.POST["space_id"])
+    pending[cascade_index]["start"] = request.POST["start"]
+    pending[cascade_index]["end"] = request.POST["end"]
+
+    request.session["pending_cascade"] = pending
+    request.session.modified = True
+
+    flagged = request.session.get("pending_cascade_flagged", [])
+    rows = build_cascade_rows(pending, flagged)
+    row = rows[cascade_index]
+
+    return render(request, "_cascade_row.html", row)

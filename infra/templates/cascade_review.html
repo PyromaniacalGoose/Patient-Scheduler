@@ -1,0 +1,24 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Cascade appointments</title>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <link rel="stylesheet" href="{% static 'infra/alternatives.css' %}">
+
+</head>
+
+{% block content %}
+    <h2>Proposed reschedule</h2>
+    {% if error %}<p style="color:red">{{ error }}</p>{% endif %}
+    <form method="post">
+        {% csrf_token %}
+        <ul>
+        {% for row in rows %}
+            {% include "_cascade_row.html" with context_id=row.context_id treatment_number=row.treatment_number start=row.start end=row.end space_name=row.space_name flagged=row.flagged alternatives_base_url=row.alternatives_base_url %}
+        {% endfor %}
+        </ul>
+        <button type="submit">Confirm reschedule</button>
+    </form>
+{% endblock %}

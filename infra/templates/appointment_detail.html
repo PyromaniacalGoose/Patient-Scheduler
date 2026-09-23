@@ -1,6 +1,6 @@
 <h2>Treatment #{{ appointment.treatment_number }} — {{ patient.first_name }} {{ patient.last_name }}</h2>
 <p>{{ slot.start_time|date:"j M Y H:i" }} - {{ slot.end_time|time:"H:i" }} in {{ space.name }}</p>
 
-<a href="{% url 'reschedule_appointment_page' appointment.id %}">Reschedule this appointment</a>
-
+<a href="{% url 'reschedule_appointment_page' appointment.id %}">Reschedule just this appointment</a>
+<a href="{% url 'start_cascade' appointment.id %}">Reschedule all appointments for this treatment course</a>
 <a href="{% url 'course_detail' course.id %}">Back to course</a>
