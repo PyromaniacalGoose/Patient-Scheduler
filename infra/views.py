@@ -375,6 +375,7 @@ def build_review_appointments(pending):
 @permission_required("infra.can_book_appointments", raise_exception=True)
 def appointment_alternatives(request, appointment_index=None, appointment_id=None, cascade_index=None):
     if cascade_index is not None:
+        # cascade appointments context 
         pending = request.session.get("pending_cascade")
         if pending is None:
             return redirect("calendar_page")
@@ -383,6 +384,8 @@ def appointment_alternatives(request, appointment_index=None, appointment_id=Non
         proposed = pending[cascade_index]
         default_date_source = datetime.fromisoformat(proposed["start"]).date()
         treatment_type = TreatmentType(proposed["treatment_type"])
+        select_target = "#cascade-rows"
+        select_swap = "outerHTML"
         context_id = cascade_index
         alternatives_base_url = reverse("cascade_alternatives", kwargs={"cascade_index": cascade_index})
         select_url = reverse("select_cascade_window", kwargs={"cascade_index": cascade_index})
@@ -390,28 +393,58 @@ def appointment_alternatives(request, appointment_index=None, appointment_id=Non
         # single-appointment reschedule context
         appointment_repo = DjangoAppointmentRepository()
         slot_repo = DjangoSlotRepository()
+
         appt = appointment_repo.get_by_id(appointment_id)
         if appt is None:
             raise Http404
+
         current_slot = slot_repo.get_by_id(appt.slot_id)
+
+        context_id = appointment_id
+
         default_date_source = current_slot.start_time.date()
         treatment_type = appt.type
-        context_id = appointment_id
-        alternatives_base_url = reverse("reschedule_alternatives", kwargs={"appointment_id": appointment_id})
-        select_url = reverse("select_reschedule_window", kwargs={"appointment_id": appointment_id}) 
+
+        select_target = f"#proposed-{context_id}"
+        select_swap = "outerHTML"
+
+        alternatives_base_url = reverse(
+            "reschedule_alternatives",
+            kwargs={"appointment_id": appointment_id},
+        )
+        select_url = reverse(
+            "select_reschedule_window",
+            kwargs={"appointment_id": appointment_id},
+        )
+
     else:
-        # course-review context (existing behavior)
+        # course-review context
         pending = request.session.get("pending_course")
+
         if pending is None:
             return redirect("start_course")
+
         if appointment_index < 0 or appointment_index >= len(pending["windows"]):
             return HttpResponseBadRequest("Invalid appointment index.")
+
         proposed = pending["windows"][appointment_index]
+
+        context_id = appointment_index
+
         default_date_source = datetime.fromisoformat(proposed["start"]).date()
         treatment_type = TreatmentType(pending["treatment_type"])
-        context_id = appointment_index
-        alternatives_base_url = reverse("appointment_alternatives", kwargs={"appointment_index": appointment_index})
-        select_url = reverse("select_window", kwargs={"appointment_index": appointment_index})
+
+        select_target = f"#proposed-{context_id}"
+        select_swap = "outerHTML"
+
+        alternatives_base_url = reverse(
+            "appointment_alternatives",
+            kwargs={"appointment_index": appointment_index},
+        )
+        select_url = reverse(
+            "select_window",
+            kwargs={"appointment_index": appointment_index},
+        )
 
     week_start_str = request.GET.get("week_start")
     if week_start_str:
@@ -455,6 +488,8 @@ def appointment_alternatives(request, appointment_index=None, appointment_id=Non
     return render(request, "_alternatives_fragment.html", {
         "days": days,
         "context_id": context_id,
+        "select_target": select_target,  
+        "select_swap": select_swap, 
         "alternatives_base_url": alternatives_base_url,
         "select_url": select_url,
         "week_start": week_start,
@@ -746,6 +781,18 @@ def course_detail(request, course_id):
         "appointments": appointment_details,
     })
 
+def serialize_reschedule_proposal(proposal):
+    return {
+        "existing_appointment_id": proposal.existing_appointment_id,
+        "old_slot_id": proposal.old_slot_id,
+        "course_id": proposal.course_id,
+        "treatment_number": proposal.treatment_number,
+        "space_id": proposal.planned.window.space_id,
+        "start": proposal.planned.window.start_time.isoformat(),
+        "end": proposal.planned.window.end_time.isoformat(),
+        "treatment_type": int(proposal.planned.treatment_type),
+        "note": proposal.planned.note,
+    }
 
 @login_required
 @permission_required("infra.can_book_appointments", raise_exception=True)
@@ -764,16 +811,7 @@ def start_cascade(request, appointment_id):
     proposals, flagged = result
 
     request.session["pending_cascade"] = [
-        {
-            "existing_appointment_id": p.existing_appointment_id,
-            "course_id": p.course_id,
-            "treatment_number": p.treatment_number,
-            "space_id": p.planned.window.space_id,
-            "start": p.planned.window.start_time.isoformat(),
-            "end": p.planned.window.end_time.isoformat(),
-            "treatment_type": int(p.planned.treatment_type),
-            "note": p.planned.note,
-        }
+        serialize_reschedule_proposal(p)
         for p in proposals
     ]
     request.session["pending_cascade_flagged"] = flagged
@@ -792,6 +830,7 @@ def review_cascade(request):
         proposals = [
             RescheduleProposal(
                 existing_appointment_id=p["existing_appointment_id"],
+                old_slot_id=p["old_slot_id"],
                 course_id=p["course_id"],
                 treatment_number=p["treatment_number"],
                 planned=PlannedAppointment(
@@ -847,15 +886,38 @@ def select_cascade_window(request, cascade_index):
     if pending is None:
         return redirect("calendar_page")
 
-    pending[cascade_index]["space_id"] = int(request.POST["space_id"])
-    pending[cascade_index]["start"] = request.POST["start"]
-    pending[cascade_index]["end"] = request.POST["end"]
+    edited = pending[cascade_index]
+    edited["space_id"] = int(request.POST["space_id"])
+    edited["start"] = request.POST["start"]
+    edited["end"] = request.POST["end"]
+
+    service = build_scheduling_service()
+    new_start_date = datetime.fromisoformat(edited["start"]).date()
+
+    result = service.cascade_reschedule(
+        appointment_id=edited["existing_appointment_id"],
+        min_interval_days=56,
+        soft_preferred_days=77,
+        earliest_start=new_start_date,
+    )
+    if result is None:
+        return HttpResponseBadRequest("Could not find valid dates for the remaining appointments.")
+
+    new_proposals, new_flagged = result
+
+    updated_tail = [
+        serialize_reschedule_proposal(p)
+        for p in new_proposals
+    ]
+
+    pending[cascade_index] = edited # Not nessecarily the one from scheduling.cascade_reschedule but will still uphold the minimum distance, as it cannot pick any earlier 
+    pending[cascade_index + 1:] = updated_tail[1:]       
+    flagged = request.session.get("pending_cascade_flagged", [])
+    flagged[cascade_index + 1:] = new_flagged[1:]
 
     request.session["pending_cascade"] = pending
+    request.session["pending_cascade_flagged"] = flagged
     request.session.modified = True
 
-    flagged = request.session.get("pending_cascade_flagged", [])
     rows = build_cascade_rows(pending, flagged)
-    row = rows[cascade_index]
-
-    return render(request, "_cascade_row.html", row)
+    return render(request, "_cascade_rows.html", {"rows": rows})

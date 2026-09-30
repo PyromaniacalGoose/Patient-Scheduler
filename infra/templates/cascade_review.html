@@ -14,7 +14,7 @@
     {% if error %}<p style="color:red">{{ error }}</p>{% endif %}
     <form method="post">
         {% csrf_token %}
-        <ul>
+        <ul id="cascade-rows">
         {% for row in rows %}
             {% include "_cascade_row.html" with context_id=row.context_id treatment_number=row.treatment_number start=row.start end=row.end space_name=row.space_name flagged=row.flagged alternatives_base_url=row.alternatives_base_url %}
         {% endfor %}

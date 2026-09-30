@@ -30,8 +30,8 @@
                     <button type="button" class="slot-button"
                         hx-post="{{ select_url }}"
                         hx-vals='{"space_id": "{{ w.space_id }}", "start": "{{ w.start_time.isoformat }}", "end": "{{ w.end_time.isoformat }}"}'
-                        hx-target="#proposed-{{ context_id }}"
-                        hx-swap="outerHTML">
+                        hx-target="{{ select_target }}"
+                        hx-swap="{{ select_swap }}">
                         {{ w.start_time|time:"H:i" }} – {{ w.end_time|time:"H:i" }}
                     </button>
                 {% empty %}
