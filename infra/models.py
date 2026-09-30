@@ -5,7 +5,7 @@ Django ORM for persistent data storage, striving to adhere to 3NF
 
 from django.contrib.postgres.constraints import ExclusionConstraint
 from django.db import models
-from django.db.models import Func
+from django.db.models import Func, Q
 from django.utils import timezone
 from .validators import validate_cpr
 
@@ -61,15 +61,24 @@ class TreatmentSlot(models.Model):
     space = models.ForeignKey(TreatmentSpace, on_delete=models.CASCADE)
     start_time = models.DateTimeField(db_index=True)
     end_time = models.DateTimeField()
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         constraints = [
             ExclusionConstraint(
-                name="no_overlapping_slots_per_space",
+                name="no_overlapping_active_slots_per_space",
                 expressions=[
                     ("space", "="),
-                    (Func("start_time", "end_time", function="tstzrange"), "&&"),
+                    (
+                        Func(
+                            "start_time",
+                            "end_time",
+                            function="tstzrange",
+                        ),
+                        "&&",
+                    ),
                 ],
+                condition=Q(is_active=True),
             )
         ]
         
@@ -116,7 +125,7 @@ class TreatmentAppointment(models.Model):
 class SpaceSchedule(models.Model):
     space = models.ForeignKey(TreatmentSpace, on_delete=models.CASCADE)
     weekday = models.IntegerField(choices=[(0,"Man"),(1,"Tir"),(2,"Ons"),(3,"Tor"),(4,"Fre"),(5,"Lør"),(6,"Søn")])
-    open_time = models.TimeField()
+    open_time = models.TimeField() 
     close_time = models.TimeField()
 
     class Meta:

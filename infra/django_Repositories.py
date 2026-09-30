@@ -84,8 +84,12 @@ class DjangoSlotRepository:
 
     def get_booked_in_range(self, space_id: int, start: datetime, end: datetime) -> list[TreatmentSlot]:
         orm_slots = ORMSlot.objects.filter(
-            space_id=space_id, start_time__lt=end, end_time__gt=start
+            is_active=True,
+            space_id=space_id,
+            start_time__lt=end,
+            end_time__gt=start,
         ).order_by("start_time")
+
         return [self._to_domain(s) for s in orm_slots]
     
     def save(self, treatment_slot: TreatmentSlot) -> TreatmentSlot:
@@ -108,7 +112,9 @@ class DjangoSlotRepository:
         return self._to_domain(orm_obj)
 
     def unbook(self, slot_id: int) -> None:
-        ORMSlot.objects.filter(id=slot_id).delete()
+        ORMTreatmentSlot.objects.filter(id=slot_id).update(
+            is_active=False
+        )
 
     @staticmethod
     def _to_domain(orm_obj: ORMSlot) -> TreatmentSlot:
