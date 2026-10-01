@@ -112,7 +112,7 @@ class DjangoSlotRepository:
         return self._to_domain(orm_obj)
 
     def unbook(self, slot_id: int) -> None:
-        ORMTreatmentSlot.objects.filter(id=slot_id).update(
+        ORMSlot.objects.filter(id=slot_id).update(
             is_active=False
         )
 
