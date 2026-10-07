@@ -864,9 +864,19 @@ def review_cascade(request):
 
 def build_cascade_rows(pending, flagged):
     space_repo = DjangoSpaceRepository()
+    slot_repo = DjangoSlotRepository()
     rows = []
     for i, p in enumerate(pending):
         space = space_repo.get_by_id(p["space_id"])
+
+        old_slot = slot_repo.get_by_id(p["old_slot_id"])
+
+        start = datetime.fromisoformat(p["start"])
+
+        difference_days = (
+            start.date() - old_slot.start_time.date()
+        ).days
+
         rows.append({
             "context_id": i,
             "existing_appointment_id": p["existing_appointment_id"],
@@ -874,6 +884,8 @@ def build_cascade_rows(pending, flagged):
             "start": datetime.fromisoformat(p["start"]),
             "end": datetime.fromisoformat(p["end"]),
             "space_name": space.name,
+            "difference_days": difference_days,
+            "difference_absolute": abs(difference_days),
             "flagged": flagged[i] if i < len(flagged) else False,
             "alternatives_base_url": reverse("cascade_alternatives", kwargs={"cascade_index": i}),
         })

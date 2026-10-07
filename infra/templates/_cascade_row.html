@@ -4,6 +4,20 @@
     <br>
     Space: {{ space_name }}
     {% if flagged %}<br><strong>(beyond soft preference)</strong>{% endif %}
+    
+    <br>
+    {% if difference_days %}
+
+        {% if difference_days > 0 %}
+            {{ difference_absolute }} day{{ difference_absolute|pluralize }}
+            later than originally proposed
+        {% else %}
+            {{ difference_absolute }} day{{ difference_absolute|pluralize }}
+            earlier than originally proposed
+        {% endif %}
+    {% endif %}
+    <br>
+
     <br>
     <button type="button"
         hx-get="{{ alternatives_base_url }}"
