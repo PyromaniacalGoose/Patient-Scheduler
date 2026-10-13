@@ -2,7 +2,7 @@ from dataclasses import is_dataclass, replace
 from datetime import date, datetime, time, timedelta
 
 from .repositories import AppointmentRepository, CourseRepository, SlotRepository, ScheduleRepository, SpaceRepository
-from.models import COPENHAGEN_TZ, TREATMENT_DURATIONS, Appointment, AppointmentMissmatchError, AppointmentStatus, CourseBookingFailedError, CourseStatus, FreeInterval, PlannedAppointment, RescheduleProposal, ScheduleClosure, ScheduleOverride, SlotUnavailableError, SpaceSchedule, TreatmentCourse, TreatmentSlot, TreatmentType, AvailableWindow, TreatmentSpace
+from.models import COPENHAGEN_TZ, RESCHEDULE_GRACE_DAYS, TREATMENT_DURATIONS, Appointment, AppointmentMissmatchError, AppointmentStatus, CourseBookingFailedError, CourseStatus, FreeInterval, PlannedAppointment, RescheduleProposal, ScheduleClosure, ScheduleOverride, SlotUnavailableError, SpaceSchedule, TreatmentCourse, TreatmentSlot, TreatmentType, AvailableWindow, LateReschedulingError
 
 # This makes scehduling dependant on django, if backend ever changes from django, import UnitOfWork or likevise to handle atomic transactiosn 
 from django.db.transaction import atomic 
@@ -177,6 +177,16 @@ class SchedulingService:
 
         return windows, flagged
 
+    def Check_Reschedulability(self, app_slot_id : int):
+        now = datetime.now(tz=COPENHAGEN_TZ)
+        appointment_slot = self._slot_repo.get_by_id(app_slot_id)
+        if appointment_slot is None:
+            raise ValueError("Could not find the slot for the appointment being rescheduled")
+
+        if appointment_slot.start_time < (now - timedelta(days=RESCHEDULE_GRACE_DAYS)):
+            raise LateReschedulingError(appointment_slot.start_time)
+
+
     def cascade_reschedule( # Will need a commit method like the book_course
         self,
         appointment_id: int,
@@ -194,11 +204,11 @@ class SchedulingService:
         
         if old_appointment is None:
             raise ValueError("Must give a real appoinment id to reschedule")
+        
+        self.Check_Reschedulability(old_appointment.slot_id) # If the first isn't too old, neither is the rest
 
         if earliest_start is None:
             old_appointment_slot = self._slot_repo.get_by_id(old_appointment.slot_id)
-            if old_appointment_slot is None:
-                raise ValueError("Could not find the slot for the appointment being rescheduled")
             
             original_date = old_appointment_slot.start_time.date()
             today = date.today()
@@ -278,6 +288,7 @@ class SchedulingService:
             raise ValueError("Must give a real appointment id to reschedule")
     
         old_slot_id = appt.slot_id
+        self.Check_Reschedulability(old_slot_id)
     
         with atomic():
             overlapping = self._slot_repo.get_booked_in_range(new_window.space_id, new_window.start_time, new_window.end_time)

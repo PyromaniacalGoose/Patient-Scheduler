@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 
 # Global timezone
 COPENHAGEN_TZ = ZoneInfo("Europe/Copenhagen")
+RESCHEDULE_GRACE_DAYS = 7
 
 class AppointmentStatus(IntEnum):
     SCHEDULED = 1
@@ -180,5 +181,12 @@ class CourseBookingFailedError(Exception):
         super().__init__(
             f"Booking failed at appointment {failed_at_appointment}: "
             f"slot at space {underlying.space_id}, {underlying.start_time} is no longer available"
+        )
+
+class LateReschedulingError(Exception):
+    def __init__(self, appointment_date: datetime):
+        self.appointment_date = appointment_date
+        super().__init__(
+            f"Could not rebook appointment at: {appointment_date} - it is more than {RESCHEDULE_GRACE_DAYS} days ago"
         )
 
