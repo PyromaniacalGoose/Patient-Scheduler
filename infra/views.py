@@ -12,7 +12,7 @@ from django.urls import reverse
 
 from infra.services import build_scheduling_service
 from patients.PatientService import PatientService
-from scheduling.models import COPENHAGEN_TZ, TREATMENT_DURATIONS, AvailableWindow, CourseBookingFailedError, CourseStatus, PlannedAppointment, RescheduleProposal, ScheduleClosure, ScheduleOverride, SlotUnavailableError, SpaceSchedule, TreatmentCourse, TreatmentType
+from scheduling.models import COPENHAGEN_TZ, TREATMENT_DURATIONS, AvailableWindow, CourseBookingFailedError, CourseStatus, PlannedAppointment, RescheduleProposal, ScheduleClosure, ScheduleOverride, SlotUnavailableError, SpaceSchedule, TreatmentCourse, TreatmentType, RESCHEDULE_GRACE_DAYS
 from scheduling.scheduling import compute_free_intervals, find_windows_for_duration
 
 
@@ -876,6 +876,12 @@ def build_cascade_rows(pending, flagged):
         difference_days = (
             start.date() - old_slot.start_time.date()
         ).days
+        now = timezone.now()
+
+        is_past = old_slot.end_time <= now
+        can_reschedule = (
+            old_slot.start_time >= now - timedelta(days = RESCHEDULE_GRACE_DAYS)
+        )
 
         rows.append({
             "context_id": i,
@@ -886,6 +892,8 @@ def build_cascade_rows(pending, flagged):
             "space_name": space.name,
             "difference_days": difference_days,
             "difference_absolute": abs(difference_days),
+            "is_past": is_past,
+            "can_reschedule": can_reschedule,
             "flagged": flagged[i] if i < len(flagged) else False,
             "alternatives_base_url": reverse("cascade_alternatives", kwargs={"cascade_index": i}),
         })

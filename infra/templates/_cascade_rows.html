@@ -1,5 +1,5 @@
 <ul id="cascade-rows">
 {% for row in rows %}
-    {% include "_cascade_row.html" with context_id=row.context_id treatment_number=row.treatment_number start=row.start end=row.end space_name=row.space_name flagged=row.flagged alternatives_base_url=row.alternatives_base_url difference_days=row.difference_days difference_absolute=row.difference_absolute %}
+    {% include "_cascade_row.html" with context_id=row.context_id treatment_number=row.treatment_number start=row.start end=row.end space_name=row.space_name flagged=row.flagged alternatives_base_url=row.alternatives_base_url difference_days=row.difference_days difference_absolute=row.difference_absolute is_past=row.is_past can_reschedule=row.can_reschedule %}
 {% endfor %}
 </ul>

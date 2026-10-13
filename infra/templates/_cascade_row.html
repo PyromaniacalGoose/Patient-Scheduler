@@ -1,13 +1,34 @@
-<li id="proposed-{{ context_id }}">
+<li id="proposed-{{ context_id }}"
+    class="appointment-row{% if is_past %} appointment-row--past{% endif %}"
+>
     <strong>Treatment #{{ treatment_number }}</strong>
     {{ start|date:"j M Y" }} {{ start|time:"H:i" }} – {{ end|time:"H:i" }}
+
     <br>
     Space: {{ space_name }}
-    {% if flagged %}<br><strong>(beyond soft preference)</strong>{% endif %}
-    
-    <br>
-    {% if difference_days %}
 
+    {% if flagged %}
+        <br>
+        <strong>(beyond soft preference)</strong>
+    {% endif %}
+
+    {% if is_past %}
+        <br>
+        <span class="appointment-status appointment-status--past">
+            Original appointment has passed
+        </span>
+    {% endif %}
+
+    {% if is_past and not can_reschedule %}
+        <br>
+        <span class="appointment-status appointment-status--locked">
+            Rescheduling period expired
+        </span>
+    {% endif %}
+
+    <br>
+
+    {% if difference_days %}
         {% if difference_days > 0 %}
             {{ difference_absolute }} day{{ difference_absolute|pluralize }}
             later than originally proposed
@@ -16,14 +37,21 @@
             earlier than originally proposed
         {% endif %}
     {% endif %}
-    <br>
 
-    <br>
-    <button type="button"
-        hx-get="{{ alternatives_base_url }}"
-        hx-target="#alternatives-container-{{ context_id }}"
-        hx-swap="innerHTML">
-        Change this date
-    </button>
-    <div id="alternatives-container-{{ context_id }}"></div>
+    <br><br>
+
+    {% if can_reschedule %}
+        <button type="button"
+            hx-get="{{ alternatives_base_url }}"
+            hx-target="#alternatives-container-{{ context_id }}"
+            hx-swap="innerHTML">
+            Change this date
+        </button>
+
+        <div id="alternatives-container-{{ context_id }}"></div>
+    {% else %}
+        <button disabled>
+            Rescheduling unavailable
+        </button>
+    {% endif %}
 </li>
