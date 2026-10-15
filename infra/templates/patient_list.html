@@ -1,50 +1,62 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Patients</title>
-</head>
-<body>
+{% extends "base.html" %}
 
-    <h1>Active Patients</h1>
+{% block title %}Patients{% endblock %}
+
+{% block content %}
+    <div class="page-header">
+        <div>
+            <h1>Active Patients</h1>
+            <p class="text-muted">
+                Patients currently registered as active.
+            </p>
+        </div>
+
+        <a class="button button--secondary" href="{% url 'calendar_page' %}">
+            ← Back to calendar
+        </a>
+    </div>
 
     {% if patients %}
-        <table>
-            <thead>
-                <tr>
-                    <th>Patient Number</th>
-                    <th>First Name</th>
-                    <th>Last Name</th>
-                    <th>Gender</th>
-                    <th>CPR Number</th>
-                    <th></th>
-                </tr>
-            </thead>
+        <div class="clean-list">
+            {% for patient in patients %}
+                <div class="info-block">
+                    <div class="flex-between">
+                        <div>
+                            <p>
+                                <strong>
+                                    {{ patient.first_name }} {{ patient.last_name }}
+                                </strong>
+                            </p>
 
-            <tbody>
-                {% for patient in patients %}
-                    <tr>
-                        <td>{{ patient.patient_number }}</td>
-                        <td>{{ patient.first_name }}</td>
-                        <td>{{ patient.last_name }}</td>
-                        <td>{{ patient.gender.name }}</td>
-                        <td>{{ patient.CPR_number }}</td>
-                        <td>
-                            <a href="{% url 'patient_detail' patient_id=patient.id %}">
-                                View
-                            </a>
-                        </td>
-                    </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+                            <p>
+                                <span class="detail-label">Patient no.</span>
+                                {{ patient.patient_number }}
+                            </p>
+
+                            <p>
+                                <span class="detail-label">Gender</span>
+                                {{ patient.gender.name }}
+                            </p>
+
+                            <p>
+                                <span class="detail-label">CPR</span>
+                                {{ patient.CPR_number }}
+                            </p>
+                        </div>
+
+                        <a
+                            class="button button--secondary"
+                            href="{% url 'patient_detail' patient_id=patient.id %}"
+                        >
+                            View patient
+                        </a>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
     {% else %}
-        <p>There are no active patients.</p>
+        <div class="empty-state">
+            There are no active patients.
+        </div>
     {% endif %}
-
-    <p>
-        <a href="{% url 'calendar_page' %}">Back to calendar</a>
-    </p>
-
-</body>
-</html>
+{% endblock %}

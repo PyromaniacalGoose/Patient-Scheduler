@@ -1,36 +1,92 @@
-<h1>Treatment Course</h1>
-    <p>
-        <a href="{% url 'calendar_page' %}">Back to calendar</a>
-    </p>
-<h2>Patient</h2>
-<p>
-    <strong>Patient:</strong> {{ patient.patient_number }}
-</p>
-<h2>Appointments</h2>
-{% if appointments %}
-    <ul>
-        {% for item in appointments %}
-            <li>
-                <strong>
-                    {{ item.slot.start_time|date:"j M Y" }}
-                </strong>
-            
-                {{ item.slot.start_time|time:"H:i" }}
-                -
-                {{ item.slot.end_time|time:"H:i" }}
-            
-                <br>
-            
-                Space {{ item.space.name }}
-            
-                {% if item.appointment.note %}
-                    <br>
-                    Note: {{ item.appointment.note }}
-                {% endif %}
-                
-            </li>
-        {% endfor %}
-    </ul>
-{% else %}
-    <p>No appointments found for this course.</p>
-{% endif %}
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Treatment Course{% endblock %}
+
+{% block extra_head %}
+    <link rel="stylesheet" href="{% static 'infra/course_detail.css' %}">
+{% endblock %}
+
+{% block content %}
+    <div class="page-header">
+        <div>
+            <h1>Treatment Course</h1>
+
+            <p class="text-muted">
+                Patient
+                <strong>{{ patient.patient_number }}</strong>
+                —
+                <strong>{{ patient.first_name }} {{ patient.last_name }}</strong>
+            </p>
+        </div>
+
+        <a class="button button--secondary" href="{% url 'calendar_page' %}">
+            ← Back to calendar
+        </a>
+    </div>
+
+    <section>
+        <h2>Appointments</h2>
+
+        {% if appointments %}
+            <ul class="appointment-list clean-list">
+                {% for item in appointments %}
+                    <li class="card appointment-card{% if item.is_past %} card--past{% else %} card--interactive{% endif %}">
+                        <div class="appointment-card__main">
+                            <div class="appointment-date">
+                                <strong>
+                                    {{ item.slot.start_time|date:"j M Y" }}
+                                </strong>
+
+                                <span class="text-muted">
+                                    {{ item.slot.start_time|time:"H:i" }}
+                                    –
+                                    {{ item.slot.end_time|time:"H:i" }}
+                                </span>
+                            </div>
+
+                            {% if item.is_past %}
+                                <span class="status status--past">
+                                    Past appointment
+                                </span>
+                            {% else %}
+                                <span class="status status--upcoming">
+                                    Upcoming
+                                </span>
+                            {% endif %}
+                        </div>
+
+                        <div class="appointment-card__details">
+                            <div>
+                                <span class="detail-label">Space</span>
+                                <span>{{ item.space.name }}</span>
+                            </div>
+
+                            {% if item.appointment.note %}
+                                <div>
+                                    <span class="detail-label">Note</span>
+                                    <span>{{ item.appointment.note }}</span>
+                                </div>
+                            {% endif %}
+                        </div>
+
+                        {% if item.can_reschedule %}
+                            <div class="appointment-card__actions">
+                                <a
+                                    class="button"
+                                    href="{% url 'appointment_detail_page' appointment_id=item.appointment.id %}"
+                                >
+                                    View appointment
+                                </a>
+                            </div>
+                        {% endif %}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <div class="empty-state">
+                No appointments found for this course.
+            </div>
+        {% endif %}
+    </section>
+{% endblock %}

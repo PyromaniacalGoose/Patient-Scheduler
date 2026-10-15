@@ -1,6 +1,7 @@
 from datetime import date, datetime
 
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 
 from patients.models import PatientDetail, Gender
 
@@ -137,13 +138,9 @@ class DjangoCourseRepository:
         orm_courses = ORMCourse.objects.filter(id__in=course_ids)
         return [self._to_domain(a) for a in orm_courses]
 
-    #TODO Make sure this either can't return multiple values, or handle a scenario where it does.
-    def get_active_course_by_patient_id(self, patient_id: int) -> TreatmentCourse | None: 
-        try:
-            orm_obj = ORMCourse.objects.get(patient_id=patient_id, status=CourseStatus.ACTIVE.value, is_active=True)
-        except ORMCourse.DoesNotExist:
-            return None
-        return self._to_domain(orm_obj)
+    def get_courses_by_patient_id(self, patient_id: int) -> TreatmentCourse | None: 
+        orm_courses = ORMCourse.objects.filter(Q(status=CourseStatus.ACTIVE.value) | Q(status=CourseStatus.PLANNED.value), patient_id=patient_id, is_active=True)
+        return [self._to_domain(a) for a in orm_courses]
 
     def cancel(self, course_id: int) -> None: 
         ORMCourse.objects.filter(id=course_id).update(

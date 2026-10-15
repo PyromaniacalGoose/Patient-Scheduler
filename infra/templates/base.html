@@ -1,0 +1,31 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <title>
+        {% block title %}
+            Department of Clinical Physiology & Nuclear Medicine Patient Scheduler
+        {% endblock %}
+    </title>
+
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+
+    <link rel="icon" type="image/x-icon" href="{% static 'infra/favicon.ico' %}">
+    <link rel="stylesheet" href="{% static 'infra/base.css' %}">
+
+    {% block extra_head %}
+    {% endblock %}
+</head>
+
+<body>
+    <main class="page">
+        {% block content %}
+        {% endblock %}
+    </main>
+
+    {% block extra_scripts %}
+    {% endblock %}
+</body>
+</html>

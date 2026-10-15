@@ -1,46 +1,119 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Patient {{ patient.patient_number }}</title>
-</head>
-<body>
+{% extends "base.html" %}
 
-    <h1>Patient {{ patient.patient_number }}</h1>
+{% block title %}
+    Patient {{ patient.patient_number }}
+{% endblock %}
 
-    <dl>
-        <dt>Patient number</dt>
-        <dd>{{ patient.patient_number }}</dd>
+{% block content %}
+    <div class="page-header">
+        <div>
+            <h1>
+                {{ patient.first_name }} {{ patient.last_name }}
+            </h1>
 
-        <dt>First name</dt>
-        <dd>{{ patient.first_name }}</dd>
+            <p class="text-muted">
+                Patient <strong>{{ patient.patient_number }}</strong>
+            </p>
+        </div>
 
-        <dt>Last name</dt>
-        <dd>{{ patient.last_name }}</dd>
+        <a class="button button--secondary" href="{% url 'calendar_page' %}">
+            ← Back to calendar
+        </a>
+    </div>
 
-        <dt>CPR number</dt>
-        <dd>{{ patient.CPR_number }}</dd>
+    <div class="info-block">
+        <p>
+            <span class="detail-label">Patient no.</span>
+            {{ patient.patient_number }}
+        </p>
 
-        <dt>Gender</dt>
-        <dd>{{ patient.gender.name }}</dd>
+        <p>
+            <span class="detail-label">First name</span>
+            {{ patient.first_name }}
+        </p>
 
-        <dt>Status</dt>
-        <dd>
+        <p>
+            <span class="detail-label">Last name</span>
+            {{ patient.last_name }}
+        </p>
+
+        <p>
+            <span class="detail-label">CPR</span>
+            {{ patient.CPR_number }}
+        </p>
+
+        <p>
+            <span class="detail-label">Gender</span>
+            {{ patient.gender.name }}
+        </p>
+
+        <p>
+            <span class="detail-label">Status</span>
+
             {% if patient.is_active %}
-                Active
+                <span class="status status--active">
+                    Active
+                </span>
             {% else %}
-                Inactive
+                <span class="status status--inactive">
+                    Inactive
+                </span>
             {% endif %}
-        </dd>
+        </p>
+    </div>
 
-        <dt>Created</dt>
-        <dd>{{ patient.created_at }}</dd>
+    <h2>Active courses</h2>
 
-        <dt>Last updated</dt>
-        <dd>{{ patient.updated_at }}</dd>
-    </dl>
+    {% if courses %}
+        <div class="clean-list">
+            {% for course in courses %}
+                <div class="info-block">
+                    <div class="flex-between">
+                        <div>
+                            <p>
+                                <strong>
+                                    Treatment course #{{ course.id }}
+                                </strong>
+                            </p>
 
-    <a href="{% url 'calendar_page' %}">Back to calendar</a>
+                            <p>
+                                <span class="detail-label">Treatments</span>
+                                {{ course.planned_treatments }}
+                            </p>
 
-</body>
-</html>
+                            <p>
+                                <span class="detail-label">Status</span>
+                                {{ course.status.name }}
+                            </p>
+                        </div>
+
+                        <a
+                            class="button button--secondary"
+                            href="{% url 'course_detail' course_id=course.id %}"
+                        >
+                            View course
+                        </a>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state">
+            This patient has no active treatment courses.
+        </div>
+    {% endif %}
+
+    <h2>Record information</h2>
+
+    <div class="info-block">
+        <p>
+            <span class="detail-label">Created</span>
+            {{ patient.created_at|date:"j M Y H:i" }}
+        </p>
+
+        <p>
+            <span class="detail-label">Updated</span>
+            {{ patient.updated_at|date:"j M Y H:i" }}
+        </p>
+    </div>
+{% endblock %}

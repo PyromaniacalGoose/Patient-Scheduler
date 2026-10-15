@@ -164,9 +164,18 @@ def appointment_detail_page(request, appointment_id):
     space = space_repo.get_by_id(slot.space_id)
     course = course_repo.get_by_id(appt.course_id)
     patient = patient_repo.get_by_id(course.patient_id)
+    now = timezone.now()
+    can_reschedule = (
+        slot.start_time >= now - timedelta(days = RESCHEDULE_GRACE_DAYS)
+    )
 
     return render(request, "appointment_detail.html", {
-        "appointment": appt, "slot": slot, "space": space, "course": course, "patient": patient,
+        "appointment": appt, 
+        "slot": slot, 
+        "space": space, 
+        "course": course, 
+        "patient": patient,
+        "can_reschedule": can_reschedule
     })
 
 
@@ -188,7 +197,11 @@ def register_patient(request):
 @login_required
 def patient_detail(request, patient_id):
     patient_repo = DjangoPatientRepository()
+    course_repo = DjangoCourseRepository()
     patient = patient_repo.get_by_id(patient_id)
+    courses = course_repo.get_courses_by_patient_id(patient_id)
+    print(len(courses))
+
 
     if patient is None:
         raise Http404("Patient not found")
@@ -196,7 +209,9 @@ def patient_detail(request, patient_id):
     return render(
         request,
         "patient_detail.html",
-        {"patient": patient},
+        {"patient": patient,
+         "courses": courses,
+         },
     )
 
 @login_required
@@ -764,6 +779,12 @@ def course_detail(request, course_id):
 
         if slot is None:
             continue  # or raise Http404 / handle this as a data integrity error
+        
+        now = timezone.now()
+        is_past = slot.end_time <= now
+        can_reschedule = (
+            slot.start_time >= now - timedelta(days = RESCHEDULE_GRACE_DAYS)
+        )
 
         space = space_repo.get_by_id(slot.space_id)
 
@@ -774,6 +795,8 @@ def course_detail(request, course_id):
             "appointment": appointment,
             "slot": slot,
             "space": space,
+            "is_past": is_past,
+            "can_reschedule": can_reschedule,
         })
 
     return render(request, "course_detail.html", {
