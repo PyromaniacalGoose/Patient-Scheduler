@@ -186,7 +186,7 @@ class DjangoScheduleRepository:
         orm_overrides = ORMScheduleOverride.objects.filter(
             date__gte=start, date__lte=end
         ).order_by("date")
-        return [self._overrides_to_domain(c) for c in orm_overrides]
+        return [self._override_to_domain(c) for c in orm_overrides]
         
     @staticmethod
     def _rule_to_domain(orm_obj: ORMSpaceSchedule) -> SpaceSchedule:
@@ -244,7 +244,7 @@ class DjangoScheduleRepository:
             close_time=override.close_time,
         )
     
-        return self._overrides_to_domain(orm_obj)
+        return self._override_to_domain(orm_obj)
 
 class DjangoSpaceRepository: 
     def get_all(self) -> list[TreatmentSpace]:
