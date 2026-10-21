@@ -1,0 +1,1291 @@
+diff --git a/.github/workflows/tests.yml b/.github/workflows/tests.yml
+new file mode 100644
+index 0000000..a7cd112
+--- /dev/null
++++ b/.github/workflows/tests.yml
+@@ -0,0 +1,27 @@
++name: Tests
++on: [push, pull_request]
++jobs:
++  pytest:
++    runs-on: ubuntu-latest
++    services:
++      postgres:
++        image: postgres:17
++        env:
++          POSTGRES_DB: patient_scheduler
++          POSTGRES_USER: scheduler_app
++          POSTGRES_PASSWORD: test-only-password
++        ports: ['5432:5432']
++        options: >-
++          --health-cmd pg_isready --health-interval 10s
++          --health-timeout 5s --health-retries 5
++    env:
++      TEST_DB_PASSWORD: test-only-password
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-python@v5
++        with:
++          python-version: '3.12'
++          cache: pip
++          cache-dependency-path: requirements-test.txt
++      - run: python -m pip install -r requirements-test.txt
++      - run: python -m pytest -ra
+diff --git a/TESTING.md b/TESTING.md
+new file mode 100644
+index 0000000..8f523ef
+--- /dev/null
++++ b/TESTING.md
+@@ -0,0 +1,105 @@
++# Robustness test suite
++
++Production code is unchanged. Tests assert intended behavior; known bugs are
++ordinary failing tests, not xfails. `regression` is a selection label, not a
++promise that a test fails forever. Remove the label after fixing a regression
++if you want it to leave the repair queue.
++
++## Run
++
++Use Python 3.12+ and PostgreSQL (not SQLite: exclusion constraints, sequences,
++and row-lock behavior are part of the contract).
++
++```sh
++python -m pip install -r requirements-test.txt
++python -m pytest -ra
++```
++
++The test role must be able to create/drop databases and install `btree_gist`.
++Use a disposable local PostgreSQL instance. Configuration is in
++`tests/settings.py`; production settings are untouched. Set `TEST_DB_NAME`,
++`TEST_DB_USER`, `TEST_DB_PASSWORD`, `TEST_DB_HOST`, and `TEST_DB_PORT` as needed.
++Defaults match the existing development settings. pytest-django creates a
++separate `test_patient_scheduler` database by default. The Actions workflow
++provides an isolated PostgreSQL 17 service and runs all tests on pushes/PRs.
++
++Useful selections:
++
++```sh
++# Calculations/domain tests: no PostgreSQL required
++python -m pytest scheduling/tests tests/test_availability.py tests/test_domain.py tests/test_patient_service.py tests/test_planning.py -m 'not django_db'
++# Known robustness expectations (some already pass)
++python -m pytest -m regression
++# Independent-connection race tests (PostgreSQL required)
++python -m pytest -m concurrency
++# HTTP behavior, including middleware and actual persistence
++python -m pytest tests/test_views.py
++```
++
++## Coverage and repair guide
++
++| Module | What it protects |
++| --- | --- |
++| `tests/test_availability.py` | Global/room override precedence, closures, room isolation, clipping, overlapping bookings, quarter-hour alignment, nonpositive durations |
++| `tests/test_domain.py` | Positive, timezone-aware ranges; treatment lengths; immutable edits revalidate |
++| `tests/test_planning.py` | Requested room selection, invalid counts/intervals, no-room search |
++| `tests/test_patient_service.py` | Gender mapping, active patient reuse, reactivation, invalid gender without writes |
++| `tests/test_repositories.py` | Missing/inactive patients; override round trips; real overlap exclusion and half-open boundaries; inactive history; course number uniqueness |
++| `tests/test_booking_integrity.py` | Real rollback after collisions and persistence failures; reschedule metadata; closed dates/hours; duration; patient double booking; stale/forged cascades; empty courses; moving within the original slot |
++| `tests/test_views.py` | Authentication on all protected routes; viewer denial; real permission provisioning; CSRF; invalid input; missing records; orphan calendar slots; UTC/local time; draft/confirm flow; retries; conflicts; spacing after manual edits; schedule deletion/atomicity |
++| `tests/test_concurrency.py` | Two room bookings competing for one interval; concurrent reschedule lost updates; duplicate patient registrations |
++
++Existing scheduling tests now freeze the clock (both `date.today` and
++`datetime.now`) and use the domain classes in fakes. The course-count mismatch
++assertion now names its exception. An existing course example was moved to an
++actual 56-day interval, and the back-to-back example explicitly extends opening
++hours so those fixtures remain valid when booking validation is strengthened.
++
++## Expected failures and behavior choices
++
++The tests intentionally expose defects identified in the review. Additional
++expectations are explicit: an appointment may move within its own original
++slot, a patient cannot be booked into two rooms at once, new courses must have
++at least one appointment, and mutation-only selection endpoints reject GET.
++These are proposed application contracts; change them deliberately if your
++requirements differ. Quarter-hour alignment follows the scheduling function's
++stated intention. No medical interval is invented: the spacing view test starts
++a course requesting 56 days, then verifies that manual selection cannot bypass
++that specific request.
++
++Validation views may render a form (200), return 400, or return 422; tests check
++that invalid state is not written. Service validation tests currently accept
++`ValueError`, the existing slot conflict error, or the course conflict wrapper
++as documented in each test. If you introduce a dedicated validation exception,
++update those expectations without weakening the state assertions.
++
++Concurrency tests use separate connections, synchronization barriers, and
++bounded PostgreSQL lock/statement timeouts. Exceptions in worker threads are
++propagated. The reschedule regression synchronizes the initial reads while
++allowing an implementation using `select_for_update` to serialize them. It
++inspects ORM queries only to coordinate the race, not to require a particular
++locking implementation. If you substantially change persistence, adapt that
++synchronization hook while retaining the no-orphan invariant.
++
++The existing fake-based booking tests do not prove rollback. Use the new real
++repository tests for that guarantee. Integration tests run real migrations;
++fixtures do not manually create the missing booking permission, so a fresh
++installation cannot silently appear healthier than it is.
++
++## Verification in this review environment
++
++The database-free selection ran: **56 passed, 8 failed, 4 deselected**. The eight
++failures expose the ignored cascade `today` argument, global overrides (two
++cases), quarter-hour alignment, ignored requested rooms, and invalid planning
++inputs (three cases). Full collection succeeds: **174 tests**. PostgreSQL is
++unavailable in this environment, so database/view/concurrency tests were not
++executed; their results must be checked against the configured service locally
++or in Actions. CI is intentionally red until the regression fixes are made.
++
++## Remaining blind spots
++
++This is not exhaustive coverage. Browser JavaScript/HTMX swapping, accessibility,
++production deployment checks, large-data query budgets, audit-history policy,
++DST-transition treatment durations, and backup/restore still need dedicated
++work. The suite does not assume an undocumented minimum interval for all
++courses; storing and enforcing each course's rules requires production changes.
+diff --git a/pytest.ini b/pytest.ini
+index 8e3965d..3079dfa 100644
+--- a/pytest.ini
++++ b/pytest.ini
+@@ -1,3 +1,7 @@
+ [pytest]
+-DJANGO_SETTINGS_MODULE = infra.settings
+-python_files = tests.py test_*.py *_tests.py
+\ No newline at end of file
++DJANGO_SETTINGS_MODULE = tests.settings
++python_files = tests.py test_*.py *_tests.py
++addopts = --strict-markers
++markers =
++    regression: intended behavior currently violated by production code
++    concurrency: real PostgreSQL tests with independent connections
+diff --git a/requirements-test.txt b/requirements-test.txt
+new file mode 100644
+index 0000000..108c79a
+--- /dev/null
++++ b/requirements-test.txt
+@@ -0,0 +1,5 @@
++# Django 6 requires Python >=3.12. PostgreSQL is required for integration tests.
++Django>=6.0,<6.1
++psycopg[binary]>=3.2,<4
++pytest>=8,<10
++pytest-django>=4.9,<5
+diff --git a/scheduling/tests/fakes.py b/scheduling/tests/fakes.py
+index 83149af..84d7fad 100644
+--- a/scheduling/tests/fakes.py
++++ b/scheduling/tests/fakes.py
+@@ -1,6 +1,6 @@
+ from dataclasses import replace
+ from datetime import date
+-from infra.models import AppointmentStatus, ScheduleClosure, ScheduleOverride, SpaceSchedule, TreatmentSpace
++from scheduling.models import AppointmentStatus, ScheduleClosure, ScheduleOverride, SpaceSchedule, TreatmentSpace
+ from scheduling.models import Appointment
+ 
+ '''Fake repos for testing schedulingService'''
+diff --git a/scheduling/tests/test_schedulingService.py b/scheduling/tests/test_schedulingService.py
+index 222007c..1a6b1e5 100644
+--- a/scheduling/tests/test_schedulingService.py
++++ b/scheduling/tests/test_schedulingService.py
+@@ -5,6 +5,7 @@ import pytest
+ 
+ from scheduling.models import (
+     Appointment,
++    AppointmentMissmatchError,
+     AppointmentStatus,
+     AvailableWindow,
+     COPENHAGEN_TZ,
+@@ -28,6 +29,23 @@ from scheduling.tests.fakes import (
+ )
+ 
+ 
++@pytest.fixture(autouse=True)
++def fixed_clock(monkeypatch):
++    class FixedDatetime(datetime):
++        @classmethod
++        def now(cls, tz=None):
++            value = datetime(2026, 3, 8, 8, tzinfo=COPENHAGEN_TZ)
++            return value.astimezone(tz) if tz else value.replace(tzinfo=None)
++
++    class FixedDate(date):
++        @classmethod
++        def today(cls):
++            return date(2026, 3, 8)
++
++    monkeypatch.setattr("scheduling.scheduling.datetime", FixedDatetime)
++    monkeypatch.setattr("scheduling.scheduling.date", FixedDate)
++
++
+ @pytest.fixture
+ def repos():
+     return {
+@@ -124,6 +142,9 @@ class TestBookAppointment:
+         existing = TreatmentSlot(id=None, space_id=1, start_time=dt(2026, 8, 17, 9, 0), end_time=dt(2026, 8, 17, 13, 30))
+         repos["slot_repo"].save(existing)
+ 
++        repos["schedule_repo"]._rules = [
++            SpaceSchedule(1, wd, time(8), time(18)) for wd in range(5)
++        ]
+         adjacent_window = AvailableWindow(
+             space_id=1, start_time=dt(2026, 8, 17, 13, 30), end_time=dt(2026, 8, 17, 18, 0)
+         )
+@@ -219,7 +240,7 @@ class TestBookCourse:
+     def test_books_all_planned_appointments_and_links_them_to_the_course(self, service, repos, open_space):
+         windows = [
+             AvailableWindow(space_id=1, start_time=dt(2026, 8, 17, 8, 0), end_time=dt(2026, 8, 17, 12, 30)),
+-            AvailableWindow(space_id=1, start_time=dt(2026, 9, 21, 8, 0), end_time=dt(2026, 9, 21, 12, 30)),
++            AvailableWindow(space_id=1, start_time=dt(2026, 10, 12, 8, 0), end_time=dt(2026, 10, 12, 12, 30)),
+         ]
+         planned = [PlannedAppointment(window=w, treatment_type=TreatmentType.V1) for w in windows]
+         course = TreatmentCourse(id=None, patient_id=42, planned_treatments=0, status=CourseStatus.PLANNED)
+@@ -238,7 +259,7 @@ class TestBookCourse:
+         planned = [PlannedAppointment(window=w, treatment_type=TreatmentType.V1) for w in windows]
+         course = TreatmentCourse(id=None, patient_id=42, planned_treatments=0, status=CourseStatus.PLANNED)
+ 
+-        with pytest.raises(Exception):  # AppointmentMissmatchError
++        with pytest.raises(AppointmentMissmatchError):
+             service.book_course(course, planned, number_of_appointments=2)
+ 
+ class TestCascadeReschedule:
+@@ -283,6 +304,7 @@ class TestCascadeReschedule:
+             gap = (nxt.planned.window.start_time.date() - prev.planned.window.start_time.date()).days
+             assert gap >= 56
+ 
++    @pytest.mark.regression
+     def test_no_show_in_the_past_searches_from_today_with_lead_time(
+         self, service, course_with_four_appointments
+     ):
+diff --git a/tests/__init__.py b/tests/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/tests/conftest.py b/tests/conftest.py
+new file mode 100644
+index 0000000..5911cfb
+--- /dev/null
++++ b/tests/conftest.py
+@@ -0,0 +1,76 @@
++from datetime import datetime, time
++import pytest
++from django.utils import timezone
++from infra import models
++from infra.services import build_scheduling_service
++from scheduling.models import COPENHAGEN_TZ
++
++
++@pytest.fixture
++def now(monkeypatch):
++    value = datetime(2026, 10, 19, 8, tzinfo=COPENHAGEN_TZ)
++
++    class Clock(datetime):
++        @classmethod
++        def now(cls, tz=None):
++            return value.astimezone(tz) if tz else value.replace(tzinfo=None)
++
++    monkeypatch.setattr("scheduling.scheduling.datetime", Clock)
++    monkeypatch.setattr(timezone, "now", lambda: value)
++    return value
++
++
++@pytest.fixture
++def room(db):
++    room = models.TreatmentSpace.objects.create(name="Test room")
++    for weekday in range(5):
++        models.SpaceSchedule.objects.create(
++            space=room, weekday=weekday, open_time=time(8), close_time=time(18)
++        )
++    return room
++
++
++@pytest.fixture
++def patient(db):
++    # Synthetic format-only identifier, never real patient data.
++    return models.Patient.objects.create(
++        first_name="Test", last_name="Patient", CPR_number="0000000000"
++    )
++
++
++@pytest.fixture
++def course(patient):
++    return models.TreatmentCourse.objects.create(patient=patient, planned_treatments=2)
++
++
++@pytest.fixture
++def appointment(course, room):
++    slot = models.TreatmentSlot.objects.create(
++        space=room,
++        start_time=datetime(2026, 10, 26, 8, tzinfo=COPENHAGEN_TZ),
++        end_time=datetime(2026, 10, 26, 12, 30, tzinfo=COPENHAGEN_TZ),
++    )
++    return models.TreatmentAppointment.objects.create(
++        course=course, slot=slot, treatment_number=1
++    )
++
++
++@pytest.fixture
++def service():
++    return build_scheduling_service()
++
++
++@pytest.fixture
++def staff_client(client, django_user_model):
++    # Superuser bypass is intentional for business-flow tests. Role provisioning
++    # is checked separately and must not be masked by creating the permission here.
++    user = django_user_model.objects.create_superuser("test_admin", password="test-password")
++    client.force_login(user)
++    return client
++
++
++@pytest.fixture
++def viewer_client(client, django_user_model):
++    user = django_user_model.objects.create_user("viewer", password="test-password")
++    client.force_login(user)
++    return client
+diff --git a/tests/settings.py b/tests/settings.py
+new file mode 100644
+index 0000000..c93e4ad
+--- /dev/null
++++ b/tests/settings.py
+@@ -0,0 +1,15 @@
++"""Test-only configuration; production settings are untouched."""
++import os
++from infra.settings import *  # noqa: F403
++
++DATABASES = {
++    "default": {
++        "ENGINE": "django.db.backends.postgresql",
++        "NAME": os.getenv("TEST_DB_NAME", "patient_scheduler"),
++        "USER": os.getenv("TEST_DB_USER", "scheduler_app"),
++        "PASSWORD": os.getenv("TEST_DB_PASSWORD", "choose-a-real-password-here"),
++        "HOST": os.getenv("TEST_DB_HOST", "localhost"),
++        "PORT": os.getenv("TEST_DB_PORT", "5432"),
++    }
++}
++PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+diff --git a/tests/test_availability.py b/tests/test_availability.py
+new file mode 100644
+index 0000000..f7a3761
+--- /dev/null
++++ b/tests/test_availability.py
+@@ -0,0 +1,94 @@
++"""Pure calculations: no database access, including override precedence."""
++from datetime import date, datetime, time, timedelta
++from itertools import permutations
++import pytest
++from scheduling.models import (
++    COPENHAGEN_TZ, SpaceSchedule, ScheduleOverride, ScheduleClosure,
++    TreatmentSlot, FreeInterval,
++)
++from scheduling.scheduling import compute_free_intervals, find_windows_for_duration
++
++DAY = date(2026, 10, 26)
++
++
++def dt(hour, minute=0):
++    return datetime.combine(DAY, time(hour, minute), COPENHAGEN_TZ)
++
++
++def free(*, overrides=(), closures=(), bookings=(), selected=None):
++    return compute_free_intervals(
++        [SpaceSchedule(i, 0, time(8), time(18)) for i in (1, 2)],
++        list(overrides), list(closures), list(bookings), dt(0), dt(23), [1, 2], selected,
++    )
++
++
++@pytest.mark.regression
++@pytest.mark.parametrize("selected", [None, 1])
++def test_global_override_applies_with_and_without_space_filter(selected):
++    result = free(overrides=[ScheduleOverride(None, DAY, time(10), time(12))], selected=selected)
++    assert len(result) == (2 if selected is None else 1)
++    assert all((x.start_time, x.end_time) == (dt(10), dt(12)) for x in result)
++
++
++def test_space_override_takes_precedence_over_global():
++    result = free(overrides=[
++        ScheduleOverride(None, DAY, time(10), time(12)),
++        ScheduleOverride(1, DAY, time(11), time(13)),
++    ], selected=1)
++    assert [(x.start_time, x.end_time) for x in result] == [(dt(11), dt(13))]
++
++
++@pytest.mark.parametrize("space_id,expected", [(None, []), (1, [2])])
++def test_closure_wins_over_overrides(space_id, expected):
++    result = free(
++        overrides=[ScheduleOverride(1, DAY, time(10), time(12))],
++        closures=[ScheduleClosure(space_id, DAY, "Closed")],
++    )
++    assert [x.space_id for x in result] == expected
++
++
++def test_unsorted_overlapping_bookings_are_subtracted_once():
++    bookings = [
++        TreatmentSlot(1, 1, dt(7), dt(10)),
++        TreatmentSlot(2, 1, dt(9), dt(12)),
++        TreatmentSlot(3, 1, dt(14), dt(19)),
++    ]
++    for ordering in permutations(bookings):
++        result = free(bookings=ordering, selected=1)
++        assert [(x.start_time, x.end_time) for x in result] == [(dt(12), dt(14))]
++
++
++def test_bookings_in_other_rooms_do_not_reduce_capacity():
++    result = free(bookings=[TreatmentSlot(1, 2, dt(8), dt(18))], selected=1)
++    assert [(x.start_time, x.end_time) for x in result] == [(dt(8), dt(18))]
++
++
++def test_request_range_clips_open_hours_and_excludes_end_day():
++    result = compute_free_intervals(
++        [SpaceSchedule(1, d, time(8), time(18)) for d in (0, 1)], [], [], [],
++        dt(10), datetime.combine(DAY + timedelta(days=1), time.min, COPENHAGEN_TZ), [1],
++    )
++    assert [(x.start_time, x.end_time) for x in result] == [(dt(10), dt(18))]
++
++
++@pytest.mark.regression
++def test_window_starts_align_to_quarter_hour_after_irregular_booking():
++    windows = find_windows_for_duration([FreeInterval(1, dt(8, 7), dt(10))], 30)
++    assert windows
++    assert windows[0].start_time == dt(8, 15)
++    assert all(w.start_time.minute % 15 == 0 for w in windows)
++
++
++@pytest.mark.regression
++@pytest.mark.parametrize("duration", [0, -1])
++def test_nonpositive_treatment_duration_is_rejected(duration):
++    with pytest.raises(ValueError):
++        find_windows_for_duration([FreeInterval(1, dt(8), dt(9))], duration)
++
++
++def test_windows_never_extend_beyond_free_interval():
++    interval = FreeInterval(1, dt(8), dt(13))
++    windows = find_windows_for_duration([interval], 270)
++    assert len(windows) == 3
++    assert all(interval.start_time <= w.start_time < w.end_time <= interval.end_time for w in windows)
++    assert all(w.end_time - w.start_time == timedelta(minutes=270) for w in windows)
+diff --git a/tests/test_booking_integrity.py b/tests/test_booking_integrity.py
+new file mode 100644
+index 0000000..c32768a
+--- /dev/null
++++ b/tests/test_booking_integrity.py
+@@ -0,0 +1,160 @@
++"""Real PostgreSQL integration tests; never substitute fake rollback behavior."""
++from dataclasses import replace
++from datetime import datetime, timedelta, date
++import pytest
++from django.db import IntegrityError
++from infra import models
++from infra.django_Repositories import DjangoCourseRepository
++from scheduling.models import (
++    AvailableWindow, COPENHAGEN_TZ, CourseBookingFailedError, PlannedAppointment,
++    RescheduleProposal, SlotUnavailableError, TreatmentType,
++)
++
++pytestmark = pytest.mark.django_db
++
++
++def window(room_id, day=27, hour=8, minutes=270):
++    start = datetime(2026, 10, day, hour, tzinfo=COPENHAGEN_TZ)
++    return AvailableWindow(room_id, start, start + timedelta(minutes=minutes))
++
++
++def domain_course(course):
++    return DjangoCourseRepository().get_by_id(course.pk)
++
++
++def snapshot():
++    return tuple(list(model.objects.order_by("pk").values()) for model in (
++        models.TreatmentCourse, models.TreatmentSlot, models.TreatmentAppointment,
++    ))
++
++
++def proposal(appointment, target):
++    return RescheduleProposal(
++        appointment.pk, appointment.slot_id,
++        PlannedAppointment(target, TreatmentType(appointment.treatment_type)),
++        appointment.course_id, appointment.treatment_number,
++    )
++
++
++def test_course_collision_rolls_back_course_and_earlier_appointments(service, course, appointment, now):
++    before = snapshot()
++    free = PlannedAppointment(window(appointment.slot.space_id), TreatmentType.V1)
++    taken = PlannedAppointment(AvailableWindow(appointment.slot.space_id, appointment.slot.start_time, appointment.slot.end_time), TreatmentType.V1)
++    unsaved_course = replace(domain_course(course), id=None)
++    with pytest.raises(CourseBookingFailedError):
++        service.book_course(unsaved_course, [free, taken], 2)
++    assert snapshot() == before
++
++
++def test_cascade_collision_restores_cancelled_appointment_and_slot(service, appointment, now):
++    other = models.TreatmentSlot.objects.create(
++        space=appointment.slot.space, start_time=window(appointment.slot.space_id).start_time,
++        end_time=window(appointment.slot.space_id).end_time,
++    )
++    before = snapshot()
++    with pytest.raises(CourseBookingFailedError):
++        service.book_cascade([proposal(appointment, AvailableWindow(other.space_id, other.start_time, other.end_time))])
++    assert snapshot() == before
++
++
++def test_reschedule_persistence_failure_does_not_leave_new_slot(service, appointment, now, monkeypatch):
++    before = snapshot()
++    def fail(_appointment):
++        raise IntegrityError("injected appointment persistence failure")
++    monkeypatch.setattr(service._appointment_repo, "save", fail)
++    with pytest.raises(IntegrityError):
++        service.reschedule_single_appointment(appointment.pk, window(appointment.slot.space_id))
++    assert snapshot() == before
++
++
++def test_successful_reschedule_preserves_appointment_fields_and_releases_old_slot(service, appointment, now):
++    appointment.note = "Keep this note"
++    appointment.save()
++    target = window(appointment.slot.space_id)
++    old_slot_id = appointment.slot_id
++    result = service.reschedule_single_appointment(appointment.pk, target)
++    appointment.refresh_from_db()
++    assert result.id == appointment.pk
++    assert appointment.slot_id != old_slot_id
++    assert appointment.note == "Keep this note"
++    assert appointment.treatment_number == 1
++    assert not models.TreatmentSlot.objects.get(pk=old_slot_id).is_active
++    assert models.TreatmentSlot.objects.filter(is_active=True).count() == 1
++
++
++@pytest.mark.regression
++@pytest.mark.parametrize("day,hour,minutes", [(25, 8, 270), (27, 2, 270), (27, 8, 1)])
++def test_single_reschedule_rejects_closed_hours_and_short_duration(service, appointment, now, day, hour, minutes):
++    before = snapshot()
++    with pytest.raises((ValueError, SlotUnavailableError)):
++        service.reschedule_single_appointment(appointment.pk, window(appointment.slot.space_id, day, hour, minutes))
++    assert snapshot() == before
++
++
++@pytest.mark.regression
++def test_single_reschedule_rejects_closed_date(service, appointment, now):
++    models.ScheduleClosure.objects.create(date=date(2026, 10, 27), reason="Closed")
++    before = snapshot()
++    with pytest.raises((ValueError, SlotUnavailableError)):
++        service.reschedule_single_appointment(appointment.pk, window(appointment.slot.space_id))
++    assert snapshot() == before
++
++
++@pytest.mark.regression
++def test_course_commit_rechecks_new_closure(service, course, room, now):
++    target = window(room.pk)
++    models.ScheduleClosure.objects.create(space=room, date=target.start_time.date(), reason="Closed after preview")
++    before = snapshot()
++    with pytest.raises((ValueError, SlotUnavailableError, CourseBookingFailedError)):
++        service.book_course(domain_course(course), [PlannedAppointment(target, TreatmentType.V1)], 1)
++    assert snapshot() == before
++
++
++@pytest.mark.regression
++def test_single_reschedule_cannot_overlap_its_patients_other_room_booking(service, appointment, room, now):
++    other_room = models.TreatmentSpace.objects.create(name="Other room")
++    for rule in room.spaceschedule_set.all():
++        models.SpaceSchedule.objects.create(space=other_room, weekday=rule.weekday, open_time=rule.open_time, close_time=rule.close_time)
++    target = window(room.pk)
++    other_slot = models.TreatmentSlot.objects.create(space=other_room, start_time=target.start_time, end_time=target.end_time)
++    models.TreatmentAppointment.objects.create(course=appointment.course, slot=other_slot, treatment_number=2)
++    before = snapshot()
++    with pytest.raises((ValueError, SlotUnavailableError)):
++        service.reschedule_single_appointment(appointment.pk, target)
++    assert snapshot() == before
++
++
++@pytest.mark.regression
++def test_stale_cascade_cannot_cancel_rescheduled_appointment(service, appointment, now):
++    stale = proposal(appointment, window(appointment.slot.space_id, day=28))
++    service.reschedule_single_appointment(appointment.pk, window(appointment.slot.space_id, day=27))
++    before = snapshot()
++    with pytest.raises((ValueError, SlotUnavailableError, CourseBookingFailedError)):
++        service.book_cascade([stale])
++    assert snapshot() == before
++
++
++@pytest.mark.regression
++def test_cascade_cannot_target_another_courses_appointment(service, appointment, patient, now):
++    other_course = models.TreatmentCourse.objects.create(patient=patient, planned_treatments=1)
++    forged = replace(proposal(appointment, window(appointment.slot.space_id)), course_id=other_course.pk)
++    before = snapshot()
++    with pytest.raises(ValueError):
++        service.book_cascade([forged])
++    assert snapshot() == before
++
++
++@pytest.mark.regression
++def test_zero_appointment_course_rejected(service, course):
++    before = snapshot()
++    with pytest.raises(ValueError):
++        service.book_course(domain_course(course), [], 0)
++    assert snapshot() == before
++
++
++@pytest.mark.regression
++def test_moving_appointment_within_its_own_slot_is_allowed(service, appointment, now):
++    target = AvailableWindow(appointment.slot.space_id, appointment.slot.start_time + timedelta(minutes=15), appointment.slot.end_time + timedelta(minutes=15))
++    saved = service.reschedule_single_appointment(appointment.pk, target)
++    assert saved.id == appointment.pk
++    assert models.TreatmentSlot.objects.filter(is_active=True).count() == 1
+diff --git a/tests/test_concurrency.py b/tests/test_concurrency.py
+new file mode 100644
+index 0000000..5c04af4
+--- /dev/null
++++ b/tests/test_concurrency.py
+@@ -0,0 +1,111 @@
++"""Independent connections and bounded synchronization, never sleeps.
++
++These tests need a PostgreSQL database and pytest-django's transactional_db.
++"""
++from concurrent.futures import ThreadPoolExecutor
++from datetime import datetime, timedelta
++from threading import Barrier
++import pytest
++from django.db import close_old_connections, connections, transaction
++from infra import models
++from infra.services import build_scheduling_service
++from scheduling.models import AvailableWindow, COPENHAGEN_TZ, SlotUnavailableError
++
++pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.concurrency]
++
++
++def run_workers(workers):
++    def run(worker):
++        close_old_connections()
++        try:
++            # Fail fast rather than leave the suite blocked on a row lock.
++            with connections["default"].cursor() as cursor:
++                cursor.execute("SET lock_timeout = '5s'")
++                cursor.execute("SET statement_timeout = '10s'")
++            return worker()
++        finally:
++            connections["default"].close()
++    with ThreadPoolExecutor(max_workers=len(workers)) as pool:
++        futures = [pool.submit(run, worker) for worker in workers]
++        return [future.result(timeout=20) for future in futures]
++
++
++def test_simultaneous_room_bookings_cannot_both_succeed(room):
++    barrier = Barrier(2, timeout=5)
++    start = datetime(2026, 10, 27, 8, tzinfo=COPENHAGEN_TZ)
++    def worker():
++        from django.db import IntegrityError
++        barrier.wait()
++        try:
++            with transaction.atomic():
++                models.TreatmentSlot.objects.create(space_id=room.pk, start_time=start, end_time=start + timedelta(hours=1))
++            return "booked"
++        except IntegrityError:
++            return "conflict"
++    assert sorted(run_workers([worker, worker])) == ["booked", "conflict"]
++    assert models.TreatmentSlot.objects.filter(is_active=True).count() == 1
++
++
++@pytest.mark.regression
++def test_concurrent_reschedules_never_leave_orphan_active_slot(appointment, now, monkeypatch):
++    # Synchronize the actual initial reads, exposing the lost-update race.
++    # If a fix locks on the first read, PostgreSQL serializes those reads; skip
++    # this barrier for select_for_update queries to avoid manufacturing deadlock.
++    from django.db.models.query import QuerySet
++    original_get = QuerySet.get
++    barrier = Barrier(2, timeout=5)
++    import threading
++    local = threading.local()
++
++    def synchronized_get(query, *args, **kwargs):
++        result = original_get(query, *args, **kwargs)
++        if query.model is models.TreatmentAppointment and not getattr(local, "seen", False):
++            local.seen = True
++            if not query.query.select_for_update:
++                barrier.wait()
++        return result
++    monkeypatch.setattr(QuerySet, "get", synchronized_get)
++
++    def worker(day):
++        def run():
++            start = datetime(2026, 10, day, 8, tzinfo=COPENHAGEN_TZ)
++            try:
++                build_scheduling_service().reschedule_single_appointment(
++                    appointment.pk, AvailableWindow(appointment.slot.space_id, start, start + timedelta(minutes=270))
++                )
++                return "saved"
++            except (ValueError, SlotUnavailableError):
++                return "rejected"
++        return run
++    # Resolve lazy relations on the main connection before starting workers.
++    appointment.slot
++    outcomes = run_workers([worker(27), worker(28)])
++    assert "saved" in outcomes
++    active = models.TreatmentSlot.objects.filter(is_active=True)
++    referenced = models.TreatmentAppointment.objects.filter(is_active=True).values_list("slot_id", flat=True)
++    assert not active.exclude(pk__in=referenced).exists(), "Concurrent reschedules left an orphan slot"
++    assert active.count() == 1
++
++
++@pytest.mark.regression
++def test_concurrent_registration_reuses_same_patient(transactional_db, monkeypatch):
++    from infra.django_Repositories import DjangoPatientRepository
++    from patients.PatientService import PatientService
++    barrier = Barrier(2, timeout=5)
++    original = DjangoPatientRepository.get_by_cpr
++    import threading
++    local = threading.local()
++    def synchronized_lookup(repo, cpr):
++        found = original(repo, cpr)
++        if not getattr(local, "seen", False):
++            local.seen = True
++            barrier.wait()
++        return found
++    monkeypatch.setattr(DjangoPatientRepository, "get_by_cpr", synchronized_lookup)
++    def worker():
++        return PatientService(DjangoPatientRepository()).register_or_reactivate(
++            "Test", "Patient", "0000000000", "unassigned"
++        ).id
++    ids = run_workers([worker, worker])
++    assert ids[0] == ids[1]
++    assert models.Patient.objects.count() == 1
+diff --git a/tests/test_domain.py b/tests/test_domain.py
+new file mode 100644
+index 0000000..e482b9e
+--- /dev/null
++++ b/tests/test_domain.py
+@@ -0,0 +1,46 @@
++from datetime import datetime, timedelta
++import pytest
++from scheduling.models import (
++    AvailableWindow, COPENHAGEN_TZ, FreeInterval, PlannedAppointment,
++    TreatmentSlot, TreatmentType, TREATMENT_DURATIONS,
++)
++from scheduling.scheduling import edit_planned_appointment
++
++START = datetime(2026, 10, 26, 8, tzinfo=COPENHAGEN_TZ)
++
++
++@pytest.mark.parametrize("model", [AvailableWindow, FreeInterval, TreatmentSlot])
++@pytest.mark.parametrize("offset", [0, -1])
++def test_time_ranges_must_have_positive_length(model, offset):
++    kwargs = dict(space_id=1, start_time=START, end_time=START + timedelta(minutes=offset))
++    if model is TreatmentSlot:
++        kwargs["id"] = None
++    with pytest.raises(ValueError):
++        model(**kwargs)
++
++
++@pytest.mark.parametrize("model", [AvailableWindow, FreeInterval, TreatmentSlot])
++@pytest.mark.parametrize("naive_field", ["start_time", "end_time"])
++def test_ranges_require_aware_datetimes(model, naive_field):
++    kwargs = dict(space_id=1, start_time=START, end_time=START + timedelta(hours=1))
++    kwargs[naive_field] = kwargs[naive_field].replace(tzinfo=None)
++    if model is TreatmentSlot:
++        kwargs["id"] = None
++    with pytest.raises(ValueError):
++        model(**kwargs)
++
++
++@pytest.mark.parametrize("kind", list(TreatmentType))
++def test_treatment_rejects_window_one_minute_too_short(kind):
++    window = AvailableWindow(1, START, START + timedelta(minutes=TREATMENT_DURATIONS[kind] - 1))
++    with pytest.raises(ValueError):
++        PlannedAppointment(window, kind)
++
++
++def test_edit_revalidates_duration_and_preserves_original():
++    original = PlannedAppointment(AvailableWindow(1, START, START + timedelta(minutes=270)), TreatmentType.V1, "original")
++    with pytest.raises(ValueError):
++        edit_planned_appointment(original, new_window=AvailableWindow(1, START, START + timedelta(minutes=1)))
++    assert original.note == "original"
++    assert edit_planned_appointment(original, new_note="new").note == "new"
++    assert original.note == "original"
+diff --git a/tests/test_patient_service.py b/tests/test_patient_service.py
+new file mode 100644
+index 0000000..a76c73b
+--- /dev/null
++++ b/tests/test_patient_service.py
+@@ -0,0 +1,53 @@
++from dataclasses import replace
++import pytest
++from patients.PatientService import PatientService
++from patients.models import Gender, PatientDetail
++
++
++class PatientRepo:
++    """Small domain-only fake; database races are not tested with this fake."""
++    def __init__(self, existing=None):
++        self.existing = existing
++        self.saved = []
++        self.reactivated = []
++
++    def get_by_cpr(self, cpr):
++        return self.existing if self.existing and self.existing.CPR_number == cpr else None
++
++    def save(self, patient):
++        patient = replace(patient, id=1, patient_number=100001)
++        self.saved.append(patient)
++        return patient
++
++    def reactivate(self, patient_id):
++        self.reactivated.append(patient_id)
++        self.existing = replace(self.existing, is_active=True)
++        return self.existing
++
++
++@pytest.mark.parametrize("value,expected", [("male", Gender.MALE), ("female", Gender.FEMALE), ("unassigned", Gender.UNASSIGNED)])
++def test_new_patient_maps_gender_and_persists(value, expected):
++    repo = PatientRepo()
++    result = PatientService(repo).register_or_reactivate("Test", "Patient", "0000000000", value)
++    assert result.gender == expected
++    assert result.is_active
++    assert repo.saved == [result]
++
++
++@pytest.mark.parametrize("active", [True, False])
++def test_existing_patient_reused_or_reactivated_without_duplicate(active):
++    patient = PatientDetail(1, 100001, "Test", "Patient", "0000000000", Gender.UNASSIGNED, active)
++    repo = PatientRepo(patient)
++    result = PatientService(repo).register_or_reactivate("Other", "Name", patient.CPR_number, "unassigned")
++    assert result.id == patient.id
++    assert result.patient_number == patient.patient_number
++    assert result.is_active
++    assert not repo.saved
++    assert repo.reactivated == ([] if active else [patient.id])
++
++
++def test_invalid_gender_does_not_write():
++    repo = PatientRepo()
++    with pytest.raises(ValueError):
++        PatientService(repo).register_or_reactivate("Test", "Patient", "0000000000", "invalid")
++    assert not repo.saved
+diff --git a/tests/test_planning.py b/tests/test_planning.py
+new file mode 100644
+index 0000000..52fc55c
+--- /dev/null
++++ b/tests/test_planning.py
+@@ -0,0 +1,40 @@
++"""Planner input and room-selection contracts, without a database."""
++from datetime import date, time
++import pytest
++from scheduling.models import TreatmentSpace, SpaceSchedule, TreatmentType
++from scheduling.scheduling import SchedulingService
++from scheduling.tests.fakes import (
++    FakeAppointmentRepository, FakeCourseRepository, FakeScheduleRepository,
++    FakeSlotRepository, FakeSpaceRepository,
++)
++
++
++@pytest.fixture
++def planner():
++    schedules = FakeScheduleRepository()
++    spaces = FakeSpaceRepository()
++    spaces.seed_spaces(TreatmentSpace(1, "First"), TreatmentSpace(2, "Requested"))
++    schedules.seed_rules(*[
++        SpaceSchedule(room, weekday, time(8), time(18))
++        for room in (1, 2) for weekday in range(5)
++    ])
++    return SchedulingService(FakeAppointmentRepository(), FakeSlotRepository(), FakeCourseRepository(), schedules, spaces)
++
++
++@pytest.mark.regression
++def test_start_course_honors_requested_rooms(planner):
++    result = planner.start_course(1, 2, 56, 77, TreatmentType.V1, [2], date(2026, 10, 26))
++    assert result is not None
++    _, windows, _ = result
++    assert [w.space_id for w in windows] == [2, 2]
++
++
++@pytest.mark.regression
++@pytest.mark.parametrize("count,interval", [(0, 56), (-1, 56), (2, 0), (2, -1)])
++def test_invalid_planning_inputs_fail_before_producing_draft(planner, count, interval):
++    with pytest.raises(ValueError):
++        planner.start_course(1, count, interval, 77, TreatmentType.V1, [1], date(2026, 10, 26))
++
++
++def test_no_requested_room_means_no_available_window(planner):
++    assert planner.find_earliest_available_on_or_after(date(2026, 10, 26), 270, []) is None
+diff --git a/tests/test_repositories.py b/tests/test_repositories.py
+new file mode 100644
+index 0000000..fafdbca
+--- /dev/null
++++ b/tests/test_repositories.py
+@@ -0,0 +1,81 @@
++from datetime import date, datetime, time, timedelta
++import pytest
++from django.db import IntegrityError, transaction
++from infra import models
++from infra.django_Repositories import DjangoPatientRepository, DjangoScheduleRepository, DjangoSlotRepository
++from scheduling.models import COPENHAGEN_TZ, ScheduleOverride, TreatmentSlot, SlotUnavailableError
++
++pytestmark = pytest.mark.django_db
++
++
++@pytest.mark.regression
++@pytest.mark.parametrize("lookup", ["get_by_id", "get_by_number"])
++def test_missing_patient_returns_none(lookup):
++    assert getattr(DjangoPatientRepository(), lookup)(999999) is None
++
++
++@pytest.mark.regression
++@pytest.mark.parametrize("lookup", ["get_by_id", "get_by_number"])
++def test_inactive_patient_returns_none(patient, lookup):
++    patient.is_active = False
++    patient.save()
++    identifier = patient.pk if lookup == "get_by_id" else patient.patient_number
++    assert getattr(DjangoPatientRepository(), lookup)(identifier) is None
++
++
++@pytest.mark.regression
++def test_override_save_and_read_roundtrip(room):
++    repo = DjangoScheduleRepository()
++    override = ScheduleOverride(room.pk, date(2026, 10, 26), time(10), time(14))
++    assert repo.save_override(override) == override
++    assert repo.get_schedule_overrides(override.date, override.date) == [override]
++
++
++@pytest.mark.regression
++def test_existing_override_is_readable(room):
++    models.ScheduleOverride.objects.create(space=room, date=date(2026, 10, 26), open_time=time(10), close_time=time(14))
++    result = DjangoScheduleRepository().get_schedule_overrides(date(2026, 10, 26), date(2026, 10, 26))
++    assert len(result) == 1
++    assert result[0].space_id == room.pk
++
++
++@pytest.mark.parametrize("offset_minutes,overlaps", [(0, True), (30, True), (60, False), (-60, False)])
++def test_database_enforces_half_open_room_intervals(room, offset_minutes, overlaps):
++    start = datetime(2026, 10, 26, 8, tzinfo=COPENHAGEN_TZ)
++    models.TreatmentSlot.objects.create(space=room, start_time=start, end_time=start + timedelta(hours=1))
++    def insert():
++        with transaction.atomic():
++            return models.TreatmentSlot.objects.create(
++                space=room, start_time=start + timedelta(minutes=offset_minutes),
++                end_time=start + timedelta(minutes=offset_minutes + 60),
++            )
++    if overlaps:
++        with pytest.raises(IntegrityError):
++            insert()
++    else:
++        assert insert().pk
++
++
++def test_inactive_slots_do_not_block_rebooking(appointment):
++    slot = appointment.slot
++    DjangoSlotRepository().unbook(slot.pk)
++    copy = DjangoSlotRepository().save(TreatmentSlot(None, slot.space_id, slot.start_time, slot.end_time))
++    assert copy.id != slot.pk
++
++
++def test_overlap_repository_error_is_domain_error(appointment):
++    slot = appointment.slot
++    with pytest.raises(SlotUnavailableError), transaction.atomic():
++        DjangoSlotRepository().save(TreatmentSlot(None, slot.space_id, slot.start_time, slot.end_time))
++
++
++def test_active_treatment_number_unique_but_cancelled_history_allowed(appointment):
++    slot = models.TreatmentSlot.objects.create(
++        space=appointment.slot.space, start_time=appointment.slot.start_time + timedelta(days=56),
++        end_time=appointment.slot.end_time + timedelta(days=56),
++    )
++    with pytest.raises(IntegrityError), transaction.atomic():
++        models.TreatmentAppointment.objects.create(course=appointment.course, slot=slot, treatment_number=1)
++    appointment.is_active = False
++    appointment.save()
++    assert models.TreatmentAppointment.objects.create(course=appointment.course, slot=slot, treatment_number=1).pk
+diff --git a/tests/test_views.py b/tests/test_views.py
+new file mode 100644
+index 0000000..646628f
+--- /dev/null
++++ b/tests/test_views.py
+@@ -0,0 +1,298 @@
++"""HTTP contracts use real middleware, templates, sessions and repositories."""
++from datetime import date, timedelta
++import pytest
++from django.contrib.auth.models import Group, Permission
++from django.test import Client
++from django.urls import reverse
++from infra import models
++
++pytestmark = pytest.mark.django_db
++
++READ_ROUTES = [
++    ("calendar_page", {}), ("calendar_events", {}), ("calendar_availability", {}),
++    ("patient_list", {}), ("patient_detail", {"patient_id": 999999}),
++    ("appointment_detail_page", {"appointment_id": 999999}),
++    ("course_detail", {"course_id": 999999}),
++]
++WRITE_ROUTES = [
++    ("register_patient", {}), ("start_course", {}), ("review_course", {}),
++    ("schedule_management", {}), ("review_cascade", {}),
++    ("appointment_alternatives", {"appointment_index": 0}),
++    ("select_window", {"appointment_index": 0}),
++    ("reschedule_alternatives", {"appointment_id": 999999}),
++    ("select_reschedule_window", {"appointment_id": 999999}),
++    ("reschedule_appointment_page", {"appointment_id": 999999}),
++    ("start_cascade", {"appointment_id": 999999}),
++    ("cascade_alternatives", {"cascade_index": 0}),
++    ("select_cascade_window", {"cascade_index": 0}),
++]
++
++
++@pytest.mark.parametrize("name,kwargs", READ_ROUTES + WRITE_ROUTES)
++def test_anonymous_requests_redirect_to_login(client, name, kwargs):
++    response = client.get(reverse(name, kwargs=kwargs))
++    assert response.status_code == 302
++    assert response.url.startswith(reverse("login") + "?next=")
++
++
++@pytest.mark.parametrize("name,kwargs", WRITE_ROUTES)
++def test_viewer_cannot_access_booking_routes(viewer_client, name, kwargs):
++    assert viewer_client.get(reverse(name, kwargs=kwargs)).status_code == 403
++    assert viewer_client.post(reverse(name, kwargs=kwargs), {}).status_code == 403
++
++
++@pytest.mark.regression
++def test_scheduler_group_has_booking_permission():
++    permission = Permission.objects.filter(content_type__app_label="infra", codename="can_book_appointments").first()
++    assert permission is not None, "Declare can_book_appointments in a model Meta and migrate"
++    assert Group.objects.get(name="Scheduler").permissions.filter(pk=permission.pk).exists()
++    assert not Group.objects.get(name="Viewer").permissions.filter(pk=permission.pk).exists()
++
++
++@pytest.mark.parametrize("name", ["calendar_events", "calendar_availability"])
++def test_empty_calendar_returns_empty_json(viewer_client, name):
++    response = viewer_client.get(reverse(name), {"start": "2026-10-26T00:00:00+01:00", "end": "2026-10-27T00:00:00+01:00"})
++    assert response.status_code == 200
++    assert response.json() == []
++
++
++@pytest.mark.regression
++@pytest.mark.parametrize("name", ["calendar_events", "calendar_availability"])
++@pytest.mark.parametrize("query", [
++    {}, {"start": "invalid", "end": "invalid"},
++    {"start": "2026-10-27T00:00:00+01:00", "end": "2026-10-26T00:00:00+01:00"},
++    {"start": "2026-10-26", "end": "2026-10-27"},
++])
++def test_calendar_rejects_invalid_ranges(viewer_client, name, query):
++    assert viewer_client.get(reverse(name), query).status_code == 400
++
++
++@pytest.mark.regression
++@pytest.mark.parametrize("name,kwargs", [
++    ("patient_detail", {"patient_id": 999999}),
++    ("appointment_detail_page", {"appointment_id": 999999}),
++    ("course_detail", {"course_id": 999999}),
++])
++def test_unknown_detail_returns_404(viewer_client, name, kwargs):
++    assert viewer_client.get(reverse(name, kwargs=kwargs)).status_code == 404
++
++
++def test_calendar_event_contains_correct_appointment(viewer_client, appointment):
++    response = viewer_client.get(reverse("calendar_events"), {
++        "start": "2026-10-26T00:00:00+01:00", "end": "2026-10-27T00:00:00+01:00",
++    })
++    assert response.status_code == 200
++    event, = response.json()
++    assert event["extendedProps"]["appointment_id"] == appointment.pk
++    assert str(appointment.course.patient.patient_number) in event["title"]
++    assert "CPR" not in event["title"]
++    assert appointment.course.patient.CPR_number not in response.content.decode()
++
++
++@pytest.mark.regression
++def test_calendar_handles_active_slot_without_appointment(viewer_client, room, now):
++    models.TreatmentSlot.objects.create(space=room, start_time=now, end_time=now + timedelta(hours=1))
++    response = viewer_client.get(reverse("calendar_events"), {
++        "start": "2026-10-19T00:00:00+02:00", "end": "2026-10-20T00:00:00+02:00",
++    })
++    assert response.status_code == 200
++    event, = response.json()
++    assert event["extendedProps"]["appointment_id"] is None
++
++
++def test_registration_is_idempotent(staff_client):
++    payload = {"first_name": "Test", "last_name": "Patient", "cpr_number": "0000000000", "gender": "female"}
++    first = staff_client.post(reverse("register_patient"), payload)
++    second = staff_client.post(reverse("register_patient"), payload)
++    assert first.status_code == second.status_code == 302
++    assert first.url == second.url
++    assert models.Patient.objects.count() == 1
++
++
++@pytest.mark.regression
++@pytest.mark.parametrize("changes", [
++    {"cpr_number": "bad"}, {"first_name": ""}, {"gender": "unknown"},
++    {"last_name": "x" * 61},
++])
++def test_invalid_registration_is_rejected_without_writes(staff_client, changes):
++    payload = {"first_name": "Test", "last_name": "Patient", "cpr_number": "0000000000", "gender": "female"}
++    payload.update(changes)
++    response = staff_client.post(reverse("register_patient"), payload)
++    assert response.status_code in (200, 400, 422)
++    assert models.Patient.objects.count() == 0
++
++
++def test_review_without_pending_session_redirects(staff_client):
++    assert staff_client.get(reverse("review_course")).url == reverse("start_course")
++    assert staff_client.get(reverse("review_cascade")).url == reverse("calendar_page")
++
++
++def test_course_planning_does_not_write_until_confirmation(staff_client, patient, room, now):
++    response = staff_client.post(reverse("start_course"), {
++        "patient_number": patient.patient_number, "appointment_count": 2,
++        "min_interval_days": 56, "soft_preferred_days": 77,
++        "treatment_type": 1, "earliest_start": "2026-10-26",
++    })
++    assert response.status_code == 302
++    assert response.url == reverse("review_course")
++    assert len(staff_client.session["pending_course"]["windows"]) == 2
++    assert models.TreatmentCourse.objects.count() == models.TreatmentSlot.objects.count() == 0
++    assert staff_client.get(reverse("review_course")).status_code == 200
++    confirmed = staff_client.post(reverse("review_course"), {"note_0": "test note"})
++    assert confirmed.status_code == 302
++    assert models.TreatmentAppointment.objects.count() == 2
++    assert models.TreatmentAppointment.objects.get(treatment_number=1).note == "test note"
++    assert "pending_course" not in staff_client.session
++    # A browser retry cannot create another course from the consumed draft.
++    assert staff_client.post(reverse("review_course")).status_code == 302
++    assert models.TreatmentCourse.objects.count() == 1
++
++
++@pytest.mark.regression
++def test_clearing_weekday_removes_existing_rule(staff_client, room):
++    response = staff_client.post(reverse("schedule_management"), {
++        "action": "save_weekly_schedule", "space_id": room.pk,
++        **{f"{kind}_{day}": ("08:00" if kind == "open" else "18:00")
++           for day in range(1, 5) for kind in ("open", "close")},
++        "open_0": "", "close_0": "",
++    })
++    assert response.status_code == 302
++    assert not models.SpaceSchedule.objects.filter(space=room, weekday=0).exists()
++    assert models.SpaceSchedule.objects.filter(space=room).count() == 4
++
++
++@pytest.mark.regression
++def test_weekly_schedule_invalid_last_day_does_not_partially_save(staff_client, room):
++    original = list(models.SpaceSchedule.objects.filter(space=room).order_by("weekday").values_list("weekday", "open_time", "close_time"))
++    payload = {"action": "save_weekly_schedule", "space_id": room.pk}
++    for day in range(7):
++        payload.update({f"open_{day}": "09:00", f"close_{day}": "17:00"})
++    payload["close_6"] = "invalid"
++    response = staff_client.post(reverse("schedule_management"), payload)
++    assert response.status_code in (200, 400, 422)
++    assert list(models.SpaceSchedule.objects.filter(space=room).order_by("weekday").values_list("weekday", "open_time", "close_time")) == original
++
++
++def test_csrf_protects_booking_confirmation(staff_client):
++    protected = Client(enforce_csrf_checks=True)
++    protected.cookies = staff_client.cookies
++    assert protected.post(reverse("review_course"), {}).status_code == 403
++
++
++@pytest.mark.regression
++@pytest.mark.parametrize("name,kwargs", [
++    ("select_window", {"appointment_index": 0}),
++    ("select_cascade_window", {"cascade_index": 0}),
++    ("select_reschedule_window", {"appointment_id": 1}),
++])
++def test_mutating_selection_routes_require_post(staff_client, name, kwargs):
++    assert staff_client.get(reverse(name, kwargs=kwargs)).status_code == 405
++
++
++@pytest.mark.regression
++def test_selection_out_of_range_is_bad_request(staff_client, room):
++    window = {"space_id": room.pk, "start": "2026-10-26T08:00:00+01:00", "end": "2026-10-26T12:30:00+01:00"}
++    session = staff_client.session
++    session["pending_course"] = {"windows": [window], "original_windows": [window], "flagged": [False]}
++    session.save()
++    assert staff_client.post(reverse("select_window", kwargs={"appointment_index": 99}), window).status_code == 400
++
++
++@pytest.mark.regression
++@pytest.mark.parametrize("field,value", [
++    ("appointment_count", "0"), ("appointment_count", "-1"),
++    ("min_interval_days", "0"), ("min_interval_days", "-1"),
++    ("treatment_type", "99"), ("earliest_start", "invalid"),
++    ("patient_number", "not-a-number"),
++])
++def test_invalid_course_parameters_do_not_create_pending_draft(staff_client, patient, room, now, field, value):
++    payload = {
++        "patient_number": patient.patient_number, "appointment_count": 2,
++        "min_interval_days": 56, "soft_preferred_days": 77,
++        "treatment_type": 1, "earliest_start": "2026-10-26",
++    }
++    payload[field] = value
++    response = staff_client.post(reverse("start_course"), payload)
++    assert response.status_code in (200, 400, 422)
++    assert "pending_course" not in staff_client.session
++    assert models.TreatmentCourse.objects.count() == 0
++
++
++@pytest.mark.regression
++def test_unknown_patient_number_shows_error_instead_of_500(staff_client, room):
++    response = staff_client.post(reverse("start_course"), {"patient_number": 999999})
++    assert response.status_code in (200, 400, 404)
++    assert models.TreatmentCourse.objects.count() == 0
++
++
++@pytest.mark.regression
++def test_manually_selected_course_date_must_preserve_interval(staff_client, patient, room, now):
++    # Same-day, non-overlapping sessions fit the room but violate the requested
++    # 56-day interval. Exercise the public selection and confirmation paths.
++    planned = staff_client.post(reverse("start_course"), {
++        "patient_number": patient.patient_number, "appointment_count": 2,
++        "min_interval_days": 56, "soft_preferred_days": 77,
++        "treatment_type": 1, "earliest_start": "2026-10-26",
++    })
++    assert planned.status_code == 302
++    response = staff_client.post(reverse("select_window", kwargs={"appointment_index": 1}), {
++        "space_id": room.pk, "start": "2026-10-26T13:00:00+01:00", "end": "2026-10-26T17:30:00+01:00",
++    })
++    assert response.status_code in (200, 400, 422)
++    # Rejection may happen during selection or during confirmation. Either way,
++    # an invalid course must never be persisted.
++    if response.status_code == 200 and staff_client.session["pending_course"]["windows"][1]["start"].startswith("2026-10-26"):
++        confirmed = staff_client.post(reverse("review_course"))
++        assert confirmed.status_code in (200, 400, 422)
++        assert models.TreatmentAppointment.objects.count() == 0
++    else:
++        first, second = staff_client.session["pending_course"]["windows"]
++        assert (date.fromisoformat(second["start"][:10]) - date.fromisoformat(first["start"][:10])).days >= 56
++
++
++def test_booking_conflict_keeps_pending_draft_and_shows_error(staff_client, patient, room, now):
++    from datetime import datetime
++    response = staff_client.post(reverse("start_course"), {
++        "patient_number": patient.patient_number, "appointment_count": 2,
++        "min_interval_days": 56, "soft_preferred_days": 77,
++        "treatment_type": 1, "earliest_start": "2026-10-26",
++    })
++    assert response.status_code == 302
++    draft = staff_client.session["pending_course"]
++    taken = draft["windows"][1]
++    models.TreatmentSlot.objects.create(space_id=taken["space_id"], start_time=datetime.fromisoformat(taken["start"]), end_time=datetime.fromisoformat(taken["end"]))
++    response = staff_client.post(reverse("review_course"))
++    assert response.status_code == 200
++    assert response.context["error"]
++    assert staff_client.session["pending_course"] == draft
++    assert models.TreatmentCourse.objects.count() == models.TreatmentAppointment.objects.count() == 0
++    assert models.TreatmentSlot.objects.count() == 1
++
++
++@pytest.mark.regression
++def test_availability_uses_copenhagen_hours_when_calendar_sends_utc(viewer_client, room):
++    from datetime import datetime
++    from scheduling.models import COPENHAGEN_TZ
++    response = viewer_client.get(reverse("calendar_availability"), {
++        "start": "2026-10-26T00:00:00+00:00", "end": "2026-10-27T00:00:00+00:00",
++    })
++    assert response.status_code == 200
++    event, = response.json()
++    assert datetime.fromisoformat(event["start"]).astimezone(COPENHAGEN_TZ).hour == 8
++    assert datetime.fromisoformat(event["end"]).astimezone(COPENHAGEN_TZ).hour == 18
++
++
++@pytest.mark.regression
++def test_expired_reschedule_shows_client_error_and_does_not_write(staff_client, appointment, now):
++    appointment.slot.start_time = now - timedelta(days=8)
++    appointment.slot.end_time = appointment.slot.start_time + timedelta(minutes=270)
++    appointment.slot.save()
++    original_slot = appointment.slot_id
++    response = staff_client.post(reverse("select_reschedule_window", kwargs={"appointment_id": appointment.pk}), {
++        "space_id": appointment.slot.space_id,
++        "start": "2026-10-27T08:00:00+01:00", "end": "2026-10-27T12:30:00+01:00",
++    })
++    assert response.status_code in (400, 409, 422)
++    appointment.refresh_from_db()
++    assert appointment.slot_id == original_slot
++    assert models.TreatmentSlot.objects.count() == 1

@@ -1,6 +1,6 @@
 from dataclasses import replace
 from datetime import date
-from infra.models import AppointmentStatus, ScheduleClosure, ScheduleOverride, SpaceSchedule, TreatmentSpace
+from scheduling.models import AppointmentStatus, ScheduleClosure, ScheduleOverride, SpaceSchedule, TreatmentSpace
 from scheduling.models import Appointment
 
 '''Fake repos for testing schedulingService'''

@@ -5,6 +5,7 @@ import pytest
 
 from scheduling.models import (
     Appointment,
+    AppointmentMissmatchError,
     AppointmentStatus,
     AvailableWindow,
     COPENHAGEN_TZ,
@@ -26,6 +27,23 @@ from scheduling.tests.fakes import (
     FakeSlotRepository,
     FakeSpaceRepository,
 )
+
+
+@pytest.fixture(autouse=True)
+def fixed_clock(monkeypatch):
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = datetime(2026, 3, 8, 8, tzinfo=COPENHAGEN_TZ)
+            return value.astimezone(tz) if tz else value.replace(tzinfo=None)
+
+    class FixedDate(date):
+        @classmethod
+        def today(cls):
+            return date(2026, 3, 8)
+
+    monkeypatch.setattr("scheduling.scheduling.datetime", FixedDatetime)
+    monkeypatch.setattr("scheduling.scheduling.date", FixedDate)
 
 
 @pytest.fixture
@@ -124,6 +142,9 @@ class TestBookAppointment:
         existing = TreatmentSlot(id=None, space_id=1, start_time=dt(2026, 8, 17, 9, 0), end_time=dt(2026, 8, 17, 13, 30))
         repos["slot_repo"].save(existing)
 
+        repos["schedule_repo"]._rules = [
+            SpaceSchedule(1, wd, time(8), time(18)) for wd in range(5)
+        ]
         adjacent_window = AvailableWindow(
             space_id=1, start_time=dt(2026, 8, 17, 13, 30), end_time=dt(2026, 8, 17, 18, 0)
         )
@@ -219,7 +240,7 @@ class TestBookCourse:
     def test_books_all_planned_appointments_and_links_them_to_the_course(self, service, repos, open_space):
         windows = [
             AvailableWindow(space_id=1, start_time=dt(2026, 8, 17, 8, 0), end_time=dt(2026, 8, 17, 12, 30)),
-            AvailableWindow(space_id=1, start_time=dt(2026, 9, 21, 8, 0), end_time=dt(2026, 9, 21, 12, 30)),
+            AvailableWindow(space_id=1, start_time=dt(2026, 10, 12, 8, 0), end_time=dt(2026, 10, 12, 12, 30)),
         ]
         planned = [PlannedAppointment(window=w, treatment_type=TreatmentType.V1) for w in windows]
         course = TreatmentCourse(id=None, patient_id=42, planned_treatments=0, status=CourseStatus.PLANNED)
@@ -238,7 +259,7 @@ class TestBookCourse:
         planned = [PlannedAppointment(window=w, treatment_type=TreatmentType.V1) for w in windows]
         course = TreatmentCourse(id=None, patient_id=42, planned_treatments=0, status=CourseStatus.PLANNED)
 
-        with pytest.raises(Exception):  # AppointmentMissmatchError
+        with pytest.raises(AppointmentMissmatchError):
             service.book_course(course, planned, number_of_appointments=2)
 
 class TestCascadeReschedule:
@@ -283,6 +304,7 @@ class TestCascadeReschedule:
             gap = (nxt.planned.window.start_time.date() - prev.planned.window.start_time.date()).days
             assert gap >= 56
 
+    @pytest.mark.regression
     def test_no_show_in_the_past_searches_from_today_with_lead_time(
         self, service, course_with_four_appointments
     ):
