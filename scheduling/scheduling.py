@@ -30,13 +30,13 @@ class SchedulingService:
         min_interval_days: int,
         soft_preferred_days: int,
         treatment_type: TreatmentType,
-        space_ids: list[int],
         earliest_start: date,
+        Optional_space_id: int = None
     ) -> tuple[TreatmentCourse, list[AvailableWindow], list[bool]] | None:
         duration = TREATMENT_DURATIONS[treatment_type]
         result = self.plan_course_dates(
             earliest_start, appointment_count, min_interval_days,
-            soft_preferred_days, duration
+            soft_preferred_days, duration, Optional_space_id=Optional_space_id
         )
         if result is None:
             return None
@@ -117,6 +117,7 @@ class SchedulingService:
             space_ids: list[int],
             initial_window_days: int = 21,
             max_search_days: int = 180,
+            Optional_space_id: int = None
             ) -> AvailableWindow | None: 
         window_days = initial_window_days
         search_start_date = earliest
@@ -136,7 +137,7 @@ class SchedulingService:
             for sp_id in space_ids:
                 booked.extend(self._slot_repo.get_booked_in_range(sp_id, search_start, search_end))
 
-            free = compute_free_intervals(rules, overrides, closures, booked, search_start, search_end, space_ids)
+            free = compute_free_intervals(rules, overrides, closures, booked, search_start, search_end, space_ids, Optional_space_id)
             windows = find_windows_for_duration(free, duration_minutes)
 
             if windows: # Already sorted earliest first
@@ -153,17 +154,22 @@ class SchedulingService:
         min_interval_days: int, # 56 (8 weeks) hard floor
         soft_preferred_days: int, # 77 (11 weeks) informational, not a ceiling
         duration_minutes: int,
+        Optional_space_id: int = None
     ) -> tuple[list[AvailableWindow], list[bool]] | None: 
         
         windows: list[AvailableWindow] = []
         flagged: list[bool] = [] # Flag to indicate if we've gone above soft cealing 
         next_earliest = earliest_start 
         space_ids = [s.id for s in self._space_repo.get_all()]
-        
+
+        if appointment_count <= 0:
+            raise ValueError("Appointment_count must be a nonzero positive")
+        if min_interval_days <= 0:
+            raise ValueError("min_interval_days must be a nonzero positive integer")
 
         for _ in range(appointment_count): 
             found = self.find_earliest_available_on_or_after(
-                next_earliest, duration_minutes, space_ids
+                next_earliest, duration_minutes, space_ids, Optional_space_id=Optional_space_id
             )
             if found is None:
                 return None
@@ -211,7 +217,9 @@ class SchedulingService:
             old_appointment_slot = self._slot_repo.get_by_id(old_appointment.slot_id)
             
             original_date = old_appointment_slot.start_time.date()
-            today = date.today()
+            if today is None:
+                today = date.today()
+
             lead_time_floor = today + timedelta(days=MIN_BOOKING_LEAD_DAYS)
 
             if original_date >= today: #if we're rescheduling an appointment that's planned for today or in the future
@@ -327,7 +335,7 @@ def compute_free_intervals(
     if space_id is not None:
         space_ids = [space_id]
         schedule_rules = [r for r in schedule_rules if r.space_id == space_id]
-        overrides = [o for o in overrides if o.space_id == space_id]
+        overrides = [o for o in overrides if o.space_id == space_id or o.space_id is None]
         booked_slots = [s for s in booked_slots if s.space_id == space_id]
 
     # Build dicts for easier lookup
@@ -337,6 +345,10 @@ def compute_free_intervals(
 
     overrides_by_space_and_date: dict[tuple[int, date], ScheduleOverride] = {
         (o.space_id, o.date): o for o in overrides if o.space_id is not None
+    }
+
+    global_overrides_by_date: dict[date, ScheduleOverride] = {
+        o.date: o for o in overrides if o.space_id is None
     }
 
     closures_by_date: dict[date, list[ScheduleClosure]] = {}
@@ -364,7 +376,11 @@ def compute_free_intervals(
                 if any(c.space_id == sp_id for c in day_closures):
                     continue  # This space specifically closed today
 
-                override = overrides_by_space_and_date.get((sp_id, current_date))
+                
+                override = overrides_by_space_and_date.get((sp_id, current_date)) # specific space ovverrides take priority
+                if override is None:
+                    override = global_overrides_by_date.get(current_date)
+
                 if override is not None:
                     day_open_time, day_close_time = override.open_time, override.close_time
                 else: # If no override refer to usual schedule
@@ -398,7 +414,7 @@ def compute_free_intervals(
     return intervals
 
 
-def _subtract_booked(
+def _subtract_booked( 
     space_id: int,
     day_open: datetime,
     day_close: datetime,
@@ -439,7 +455,14 @@ def find_windows_for_duration(
 
     windows: list[AvailableWindow] = []
     for interval in free_intervals:
-        candidate_start = interval.start_time
+        start = interval.start_time
+        midnight = start.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # Rounds up, preserving starts already on a boundary.
+        elapsed = start - midnight
+        remainder = elapsed % step
+        candidate_start = start if remainder == timedelta(0) else start + step - remainder
+
         while candidate_start + duration <= interval.end_time:
             windows.append(
                 AvailableWindow(

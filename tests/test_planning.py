@@ -23,7 +23,7 @@ def planner():
 
 @pytest.mark.regression
 def test_start_course_honors_requested_rooms(planner):
-    result = planner.start_course(1, 2, 56, 77, TreatmentType.V1, [2], date(2026, 10, 26))
+    result = planner.start_course(1, 2, 56, 77, TreatmentType.V1, date(2026, 10, 26), 2)
     assert result is not None
     _, windows, _ = result
     assert [w.space_id for w in windows] == [2, 2]

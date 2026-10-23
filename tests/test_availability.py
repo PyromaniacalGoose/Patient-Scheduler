@@ -26,6 +26,7 @@ def free(*, overrides=(), closures=(), bookings=(), selected=None):
 @pytest.mark.parametrize("selected", [None, 1])
 def test_global_override_applies_with_and_without_space_filter(selected):
     result = free(overrides=[ScheduleOverride(None, DAY, time(10), time(12))], selected=selected)
+    print(f"checking result:  {result[0].start_time, result[0].end_time}")
     assert len(result) == (2 if selected is None else 1)
     assert all((x.start_time, x.end_time) == (dt(10), dt(12)) for x in result)
 

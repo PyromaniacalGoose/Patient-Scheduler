@@ -244,7 +244,6 @@ def start_course(request):
             min_interval_days=int(request.POST["min_interval_days"]),
             soft_preferred_days=int(request.POST["soft_preferred_days"]),
             treatment_type=TreatmentType(int(request.POST["treatment_type"])),
-            space_ids=space_ids,
             earliest_start=date.fromisoformat(request.POST["earliest_start"]),
         )
 
