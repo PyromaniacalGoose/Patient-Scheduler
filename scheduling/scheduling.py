@@ -388,11 +388,9 @@ def compute_free_intervals(
                     if rule is None:
                         continue  # Space not open on this weekday at all, no override either
                     day_open_time, day_close_time = rule.open_time, rule.close_time
-
-                tz = start.tzinfo # Pull timezone from dates
                 
-                day_open = datetime.combine(current_date, day_open_time, tzinfo=tz)
-                day_close = datetime.combine(current_date, day_close_time, tzinfo=tz)
+                day_open = datetime.combine(current_date, day_open_time, tzinfo=COPENHAGEN_TZ)
+                day_close = datetime.combine(current_date, day_close_time, tzinfo=COPENHAGEN_TZ)
 
                 # Clip to the caller's requested range
                 day_open = max(day_open, start)

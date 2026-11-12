@@ -114,6 +114,9 @@ class TreatmentAppointment(models.Model):
     is_active = models.BooleanField(default=True)
     
     class Meta:
+        permissions = [
+            ("can_book_appointments", "Can book appointments"),
+        ]
         constraints = [
             models.UniqueConstraint(
                 fields=["course", "treatment_number"],
