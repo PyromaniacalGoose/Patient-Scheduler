@@ -55,6 +55,8 @@ class SchedulingService:
         number_of_appointments: int,
         starting_treatment_number = 1
     ) -> TreatmentCourse:
+        if number_of_appointments <= 0:
+            raise ValueError("A course must contain at least one appointment.")
         if number_of_appointments != len(planned_appointments):
             raise AppointmentMissmatchError(planned_appointments, number_of_appointments)
         with atomic():
@@ -71,6 +73,29 @@ class SchedulingService:
         return saved_course
         
 
+    # SCHEDULING CHECKS: Validate only the selected window against the room schedule.
+    def _check_window_opening_hours(self, window: AvailableWindow) -> None:
+        if window.start_time.utcoffset() is None or window.end_time.utcoffset() is None:
+            raise SlotUnavailableError(window.space_id, window.start_time)
+
+        start = window.start_time.astimezone(COPENHAGEN_TZ)
+        end = window.end_time.astimezone(COPENHAGEN_TZ)
+        if start >= end:
+            raise SlotUnavailableError(window.space_id, window.start_time)
+
+        intervals = compute_free_intervals(
+            schedule_rules=self._schedule_repo.get_rules_for_space(window.space_id),
+            overrides=self._schedule_repo.get_schedule_overrides(start.date(), end.date()),
+            closures=self._schedule_repo.get_closures(start.date(), end.date()),
+            booked_slots=[],  # The caller already checks for overlapping bookings.
+            start=start,
+            end=end,
+            space_ids=[window.space_id],
+            space_id=window.space_id,
+        )
+        if not any(interval.start_time == start and interval.end_time == end for interval in intervals):
+            raise SlotUnavailableError(window.space_id, window.start_time)
+
     '''Books singular appointment and returns the saved appointment with id, should always be called as a transaction'''
     def book_appointment(
         self, 
@@ -78,6 +103,9 @@ class SchedulingService:
         planned_appointment: PlannedAppointment, 
         treatment_number: int
     ) -> Appointment:
+
+        # SCHEDULING CHECKS: Course and cascade bookings also use this method.
+        self._check_window_opening_hours(planned_appointment.window)
 
         PA_space_id = planned_appointment.window.space_id
         PA_start_time = planned_appointment.window.start_time
@@ -277,6 +305,10 @@ class SchedulingService:
         with atomic():
             for p in propsals:
                 try:
+                    # CASCADE CHECK: Verify the appointment still uses the slot in the proposal.
+                    current = self._appointment_repo.get_by_id(p.existing_appointment_id)
+                    if current is None or current.slot_id != p.old_slot_id:
+                        raise ValueError("An appointment in this proposal has changed. Replan the cascade.")
                     self._appointment_repo.cancel(p.existing_appointment_id) # leaves logging trail
                     self._slot_repo.unbook(p.old_slot_id) # just pure cleanup 
                     self.book_appointment(p.course_id, p.planned, p.treatment_number)
@@ -299,20 +331,23 @@ class SchedulingService:
         self.Check_Reschedulability(old_slot_id)
     
         with atomic():
+            # Recheck the replacement before writing the new slot.
+            self._check_window_opening_hours(new_window)
+
             overlapping = self._slot_repo.get_booked_in_range(new_window.space_id, new_window.start_time, new_window.end_time)
-            if overlapping:
+            if any(slot.id != old_slot_id for slot in overlapping):
                 raise SlotUnavailableError(new_window.space_id, new_window.start_time)
-    
+            
+            self._slot_repo.unbook(old_slot_id)  
+
             new_slot = self._slot_repo.save(TreatmentSlot(
                 id=None, space_id=new_window.space_id,
                 start_time=new_window.start_time, end_time=new_window.end_time,
             ))
-    
+
             updated = replace(appt, slot_id=new_slot.id)
             saved = self._appointment_repo.save(updated)   
-    
-            self._slot_repo.unbook(old_slot_id)         
-    
+        
             return saved
 
 

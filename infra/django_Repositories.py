@@ -276,7 +276,7 @@ class DjangoPatientRepository:
     def get_by_id(self, patient_id: int) -> PatientDetail | None:
         try:
             orm_obj = ORMPatient.objects.get(id=patient_id, is_active=True)
-        except ORMCourse.DoesNotExist:
+        except ORMPatient.DoesNotExist:
             return None
         return self._to_domain(orm_obj)
 
@@ -287,7 +287,7 @@ class DjangoPatientRepository:
     def get_by_number(self, number: int) -> PatientDetail | None:
         try:
             orm_obj = ORMPatient.objects.get(patient_number=number, is_active=True)
-        except ORMCourse.DoesNotExist:
+        except ORMPatient.DoesNotExist:
             return None
         return self._to_domain(orm_obj)
 
