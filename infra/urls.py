@@ -19,7 +19,7 @@ from django.urls import path
 from django.contrib.auth import views as auth_views
 from django.views.generic import RedirectView
 
-from infra import views
+from infra import exports, views
 
 urlpatterns = [
     path("", RedirectView.as_view(url="calendar/", permanent=False)),
@@ -28,6 +28,8 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path("calendar/", views.calendar_page, name="calendar_page"),
     path("calendar/events/", views.calendar_events, name="calendar_events"),
+    path("calendar/export/", exports.export_schedule, name="export_schedule"),
+    path("calendar/export/all/", exports.export_scheduling_data, name="export_scheduling_data"),
     path("calendar/availability/", views.calendar_availability, name="calendar_availability"),
     path("calendar/register_patient/", views.register_patient, name="register_patient"),
     path("calendar/patient/<int:patient_id>/", views.patient_detail, name="patient_detail"),

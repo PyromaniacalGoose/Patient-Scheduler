@@ -3,3 +3,4 @@ Django>=6.0,<6.1
 psycopg[binary]>=3.2,<4
 pytest>=8,<10
 pytest-django>=4.9,<5
+-r requirements-export.txt

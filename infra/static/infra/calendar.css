@@ -63,3 +63,44 @@ background: #555;
 .appointment-event {
     cursor: pointer;
 }
+
+.calendar-export {
+    position: relative;
+    margin-inline-start: auto;
+    align-self: center;
+}
+
+.calendar-export summary {
+    cursor: pointer;
+    padding: 4px 8px;
+    border: 1px solid #aaa;
+    border-radius: 4px;
+    font-size: 0.875rem;
+}
+
+.calendar-export-options {
+    position: absolute;
+    z-index: 10;
+    inset-inline-end: 0;
+    top: calc(100% + 6px);
+    display: grid;
+    gap: 12px;
+    width: max-content;
+    padding: 12px;
+    background: white;
+    color: #222;
+    border: 1px solid #aaa;
+    border-radius: 6px;
+    box-shadow: 0 3px 12px #0002;
+}
+
+.calendar-export-options form {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin: 0;
+}
+
+.calendar-export-options :is(label, input, small) {
+    grid-column: 1 / -1;
+}

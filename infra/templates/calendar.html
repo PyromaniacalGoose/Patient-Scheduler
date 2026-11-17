@@ -20,7 +20,27 @@
                 <a href="/calendar/register_patient/" class="nav-button">Register Patient</a> 
                 <a href="/calendar/schedule" class="nav-button">Schedule</a> 
             {% endif %}
+
         </div> 
+        {% if perms.infra.can_book_appointments or user.is_superuser %}
+                <details class="calendar-export">
+                    <summary>Export</summary>
+                    <div class="calendar-export-options">
+                        {% if perms.infra.can_book_appointments %}
+                            <form action="{% url 'export_schedule' %}" method="get">
+                                <label for="export-start">Start date (optional - defaults to next Monday)</label>
+                                <input id="export-start" name="start" type="date" aria-describedby="export-default">
+                                <small id="export-default">Defaults to next Monday.</small>
+                                <button type="submit" name="days" value="7">1 week</button>
+                                <button type="submit" name="days" value="14">2 weeks</button>
+                            </form>
+                        {% endif %}
+                        {% if user.is_superuser %}
+                            <a href="{% url 'export_scheduling_data' %}">All scheduling data</a>
+                        {% endif %}
+                    </div>
+                </details>
+            {% endif %}
 
     <div id="calendar" style="max-width: 1000px; margin: 40px auto;"></div>
 
