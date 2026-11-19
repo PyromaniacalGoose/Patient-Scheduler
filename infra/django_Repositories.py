@@ -1,7 +1,8 @@
 from datetime import date, datetime
 
 from django.db import IntegrityError, transaction
-from django.db.models import Q
+from django.utils import timezone
+from django.db.models import Exists, OuterRef, Q
 
 from patients.models import PatientDetail, Gender
 
@@ -291,12 +292,36 @@ class DjangoPatientRepository:
             return None
         return self._to_domain(orm_obj)
 
-    def get_active_patients(self) -> list[PatientDetail]:
+    def get_active_patients(self, search: str = "") -> list[PatientDetail]:
         orm_patients = ORMPatient.objects.filter(
             is_active=True,
         )
-        return [self._to_domain(p) for p in orm_patients]
+        # PATIENT SEARCH: Every word may match either part of the patient's name.
+        if search:
+            name_match = Q()
+            for word in search.split():
+                name_match &= Q(first_name__icontains=word) | Q(last_name__icontains=word)
+            cpr = "".join(search.split()).replace("-", "")
+            orm_patients = orm_patients.filter(name_match | Q(CPR_number__icontains=cpr))
+        return [self._to_domain(p) for p in orm_patients.order_by("last_name", "first_name", "pk")]
 
+
+    # BULK DEACTIVATION: Planned courses also protect a patient from deactivation.
+    def _patients_without_active_course(self):
+        active_courses = ORMCourse.objects.filter(
+            patient_id=OuterRef("pk"),
+            is_active=True,
+            status__in=[CourseStatus.PLANNED.value, CourseStatus.ACTIVE.value],
+        )
+        return ORMPatient.objects.filter(is_active=True).filter(~Exists(active_courses))
+
+    def count_patients_without_active_course(self) -> int:
+        return self._patients_without_active_course().count()
+
+    def deactivate_patients_without_active_course(self) -> int:
+        return self._patients_without_active_course().update(
+            is_active=False, updated_at=timezone.now(),
+        )
 
     def reactivate(self, patient_id: int) -> PatientDetail:
         orm_obj = ORMPatient.objects.get(id=patient_id)

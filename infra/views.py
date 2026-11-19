@@ -8,7 +8,7 @@ from django.http import Http404, HttpResponseBadRequest, JsonResponse
 from django.db import transaction
 from django.core.exceptions import ValidationError
 from django.utils import timezone
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_http_methods
 from infra.models import Patient, SpaceSchedule as ORMSpaceSchedule
 from infra.validators.cpr import validate_cpr
 from infra.django_Repositories import DjangoCourseRepository, DjangoPatientRepository, DjangoScheduleRepository, DjangoSlotRepository, DjangoAppointmentRepository, DjangoSpaceRepository
@@ -129,9 +129,8 @@ def calendar_events(request):
         list({appointment.course_id for appointment in appointments})
     )
     
-    patients = patient_repo.get_by_ids(
-        list({course.patient_id for course in courses})
-    )
+    # PATIENT DEACTIVATION: Existing bookings still show the patient's name.
+    patients = Patient.objects.filter(pk__in={course.patient_id for course in courses})
     # Dicts
     appointments_by_slot = {
         appointment.slot_id: appointment
@@ -168,6 +167,25 @@ def calendar_events(request):
             "extendedProps": {
                 "appointment_id": appt.id if appt else None,
             },
+        })
+
+    # CLOSURE EVENTS: FullCalendar treats the end date as exclusive.
+    closures = DjangoScheduleRepository().get_closures(start.date(), end.date())
+    for index, closure in enumerate(closures):
+        day_start = datetime.combine(closure.date, time.min, COPENHAGEN_TZ)
+        day_end = datetime.combine(closure.date + timedelta(days=1), time.min, COPENHAGEN_TZ)
+        if day_start >= end or day_end <= start:
+            continue
+        space = spaces_by_id.get(closure.space_id)
+        label = f"{space.name} closed" if space else "Hospital closed"
+        events.append({
+            "id": f"closure-{closure.date}-{closure.space_id}-{index}",
+            "start": closure.date.isoformat(),
+            "end": (closure.date + timedelta(days=1)).isoformat(),
+            "allDay": True,
+            "title": f"{label}: {closure.reason}" if closure.reason else label,
+            "color": "#8B3434",
+            "extendedProps": {"closure": True},
         })
 
     return JsonResponse(events, safe=False)
@@ -296,13 +314,48 @@ def patient_detail(request, patient_id):
 @login_required
 def patient_list(request):
     patient_repo = DjangoPatientRepository()
-    patients = patient_repo.get_active_patients()
+    search = request.GET.get("q", "").strip()
+    patients = patient_repo.get_active_patients(search)
 
     return render(
         request,
         "patient_list.html",
-        {"patients": patients},
+        {"patients": patients, "search": search},
     )
+
+# BULK DEACTIVATION: Explicit confirmation is required before updating patients.
+@login_required
+@permission_required("infra.can_book_appointments", raise_exception=True)
+@require_http_methods(["GET", "POST"])
+def deactivate_patients_without_course(request):
+    repo = DjangoPatientRepository()
+    context = {"count": repo.count_patients_without_active_course()}
+    status = 200
+    if request.method == "POST":
+        if request.POST.get("confirm") != "yes":
+            context["error"] = "Tick the confirmation box before deactivating patients."
+            status = 400
+        else:
+            context["deactivated_count"] = repo.deactivate_patients_without_active_course()
+    return render(request, "deactivate_patients_without_course.html", context, status=status)
+
+
+# PATIENT DEACTIVATION: GET displays confirmation, POST performs the soft delete.
+@login_required
+@permission_required("infra.can_book_appointments", raise_exception=True)
+@require_http_methods(["GET", "POST"])
+def deactivate_patient(request, patient_id):
+    try:
+        patient = Patient.objects.get(pk=patient_id)
+    except Patient.DoesNotExist:
+        raise Http404("Patient not found.") from None
+    if request.method == "POST":
+        Patient.objects.filter(pk=patient_id, is_active=True).update(
+            is_active=False, updated_at=timezone.now(),
+        )
+        return redirect("patient_list")
+    return render(request, "deactivate_patient.html", {"patient": patient})
+
 
 @login_required
 @permission_required("infra.can_book_appointments", raise_exception=True)

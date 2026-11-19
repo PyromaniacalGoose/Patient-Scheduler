@@ -16,6 +16,21 @@
         </a>
     </div>
 
+    <form method="get" role="search">
+        <label for="patient-search">Name or CPR</label>
+        <input id="patient-search" type="search" name="q" value="{{ search }}" autocomplete="off">
+        <button type="submit" class="button button--secondary">Search</button>
+        {% if search %}<a href="{% url 'patient_list' %}">Clear</a>{% endif %}
+    </form>
+
+    {% if perms.infra.can_book_appointments %}
+        <p>
+            <a class="button button--secondary" href="{% url 'deactivate_patients_without_course' %}">
+                Deactivate patients without an active course…
+            </a>
+        </p>
+    {% endif %}
+
     {% if patients %}
         <div class="clean-list">
             {% for patient in patients %}
@@ -50,13 +65,23 @@
                         >
                             View patient
                         </a>
+                        {% if perms.infra.can_book_appointments %}
+                            <a class="button button--secondary"
+                               href="{% url 'deactivate_patient' patient_id=patient.id %}">
+                                Deactivate
+                            </a>
+                        {% endif %}
                     </div>
                 </div>
             {% endfor %}
         </div>
     {% else %}
         <div class="empty-state">
-            There are no active patients.
+            {% if search %}
+                No active patients match your search.
+            {% else %}
+                There are no active patients.
+            {% endif %}
         </div>
     {% endif %}
 {% endblock %}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Deactivate patients without an active course{% endblock %}
+{% block content %}
+    <h1>Deactivate patients without an active course</h1>
+    {% if deactivated_count != None %}
+        <p role="status">{{ deactivated_count }} patient{{ deactivated_count|pluralize }} deactivated.</p>
+    {% else %}
+        <p><strong>Warning: This action applies to all active patients, including patients outside your current search.</strong></p>
+        <p>{{ count }} patient{{ count|pluralize }} currently have no active course and would be deactivated.</p>
+        <p>A course protects a patient when it is marked active and its status is Planned or Active.
+           Patients with no courses, or only completed, cancelled or inactive courses, qualify.</p>
+        <p>Deactivated patients disappear from the active patient list. Existing courses and appointments stay booked.
+           The eligible patients are checked again when you confirm.</p>
+        {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+        {% if count %}
+            <form method="post">
+                {% csrf_token %}
+                <p>
+                    <label>
+                        <input type="checkbox" name="confirm" value="yes" required>
+                        I understand this deactivates all patients without an active course.
+                    </label>
+                </p>
+                <button type="submit" class="button button--secondary">Confirm bulk deactivation</button>
+            </form>
+        {% endif %}
+    {% endif %}
+    <p><a href="{% url 'patient_list' %}" class="button button--secondary">Back to patients</a></p>
+{% endblock %}

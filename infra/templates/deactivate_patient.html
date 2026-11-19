@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Deactivate patient{% endblock %}
+{% block content %}
+    <h1>Deactivate patient</h1>
+    <p>{{ patient.first_name }} {{ patient.last_name }} (patient {{ patient.patient_number }})</p>
+    {% if patient.is_active %}
+        <p>This removes the patient from the active patient list. Existing courses and appointments stay booked.</p>
+        <form method="post">
+            {% csrf_token %}
+            <button type="submit" class="button button--secondary">Deactivate patient</button>
+            <a href="{% url 'patient_list' %}" class="button button--secondary">Cancel</a>
+        </form>
+    {% else %}
+        <p>This patient is already inactive.</p>
+        <a href="{% url 'patient_list' %}">Back to patients</a>
+    {% endif %}
+{% endblock %}
