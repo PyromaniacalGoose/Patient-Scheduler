@@ -169,6 +169,19 @@ button:disabled,
     color: var(--blue-bright);
 }
 
+.button--tertiary {
+    background: transparent;
+    border: 1px solid var(--grey-200);
+    color: var(--blue-dark);
+    padding: 0.25rem 0.5rem;
+}
+
+.button--tertiary:hover {
+    background: var(--grey-100);
+    border-color: var(--grey-200);
+    color: var(--blue-dark);
+}
+
 
 /* ---------- Forms ---------- */
 
