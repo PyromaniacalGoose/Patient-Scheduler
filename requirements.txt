@@ -1,0 +1,22 @@
+# Patient Scheduler - application, Excel exports, and test suite.
+# Use Python 3.12, 3.13, or 3.14.
+# Install with: python -m pip install -r requirements.txt
+
+# Web framework
+Django>=6.0,<6.1
+
+# PostgreSQL adapter with prebuilt client libraries
+psycopg[binary]>=3.2,<4
+
+# Excel export generation
+XlsxWriter>=3.2,<4
+
+# IANA timezone data for zoneinfo (needed on Windows for Europe/Copenhagen)
+tzdata>=2025.2
+
+# Test runner and Django integration
+pytest>=8,<10
+pytest-django>=4.9,<5
+
+# PostgreSQL server and its btree_gist extension are installed separately.
+# Other Python dependencies are installed automatically by pip.

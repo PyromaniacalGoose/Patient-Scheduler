@@ -360,9 +360,12 @@ def deactivate_patient(request, patient_id):
 @login_required
 @permission_required("infra.can_book_appointments", raise_exception=True)
 def start_course(request):
+    # PATIENT DROPDOWN: Available for the initial page and validation errors.
+    patient_repo = DjangoPatientRepository()
+    patients = patient_repo.get_active_patients()
+
     if request.method == "POST":
         service = build_scheduling_service()  # factory, see below
-        patient_repo = DjangoPatientRepository()
         # ERROR HANDLING: reject incomplete or invalid planning parameters.
         try:
             patient_number = int(request.POST.get("patient_number", ""))
@@ -375,20 +378,24 @@ def start_course(request):
                 raise ValueError
         except ValueError:
             return render(request, "start_course.html", {
+                "patients": patients,  # PATIENT DROPDOWN
                 "error": "Check the patient number, treatment count, intervals, treatment type, and start date.",
             }, status=400)
+
         try:
             patient = patient_repo.get_by_number(patient_number)
         except Patient.DoesNotExist:
             patient = None
         if patient is None:
-            return render(request, "start_course.html", {"error": f"Patient: {patient_number} not found."})
-
+            return render(request, "start_course.html", {
+                "patients": patients,  # PATIENT DROPDOWN
+                "error": f"Patient: {patient_number} not found.",
+            })
 
         # ERROR HANDLING: extreme dates or intervals can overflow the planner.
         try:
             result = service.start_course(
-                patient_id = patient.id,
+                patient_id=patient.id,
                 appointment_count=count,
                 min_interval_days=minimum,
                 soft_preferred_days=preferred,
@@ -397,11 +404,15 @@ def start_course(request):
             )
         except (ValueError, OverflowError):
             return render(request, "start_course.html", {
+                "patients": patients,  # PATIENT DROPDOWN
                 "error": "The planning dates or intervals are out of range.",
             }, status=400)
 
         if result is None:
-            return render(request, "start_course.html", {"error": "No feasible schedule found."})
+            return render(request, "start_course.html", {
+                "patients": patients,  # PATIENT DROPDOWN
+                "error": "No feasible schedule found.",
+            })
 
         course, windows, flagged = result
         serialized_windows = [
@@ -423,7 +434,9 @@ def start_course(request):
         }
         return redirect("review_course")
 
-    return render(request, "start_course.html")
+    return render(request, "start_course.html", {
+        "patients": patients,  # PATIENT DROPDOWN
+    })
 
 
 @login_required
