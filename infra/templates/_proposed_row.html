@@ -23,6 +23,7 @@
 
     <button
         type="button"
+        class="button--secondary"
         hx-get="{{ alternatives_base_url }}"
         hx-target="#alternatives-container-{{ context_id }}"
         hx-swap="innerHTML">
@@ -31,4 +32,4 @@
 
     <div id="alternatives-container-{{ context_id }}"></div>
 
-</li>
+</li>   
